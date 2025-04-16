@@ -1,4 +1,4 @@
-# SAvEM3
+# SAEM<sup>2</sup>-SAvEM<sup>3</sup>
 
 [![Commit](https://img.shields.io/github/last-commit/JackieZhai/SAvEM3)](https://github.com/JackieZhai/SAvEM3/commits)
 ![RepoSize](https://img.shields.io/github/repo-size/JackieZhai/SAvEM3)
@@ -11,15 +11,16 @@
 
 ## To-do List
 
-Codes and data collections are under development.
+Codes and data collections are under development. The following tasks are planned to be completed in the next few months.
 
-- [x] 2025.xx.xx: Create the repository.
-- [] 2025.xx.xx: Release the first version of SAvEM3.
+- [ ] 2025.04.xx: Release the first version of SAEM<sup>2</sup>-SAvEM<sup>3</sup>.
+- [x] 2024.09.24: Finish the development of the pipeline.
+- [x] 2024.02.05: Create the repository.
 
 
 ## Pipeline
 
-## SAEM$^2$
+## SAEM<sup>2</sup>
 
 ### Data bank: diverse imaging methods and animal species
 
@@ -30,7 +31,7 @@ Codes and data collections are under development.
 ### Auxiliary learning: hybrid representation of neural morphology for SAM
 
 
-## SAvEM$^3$
+## SAvEM<sup>3</sup>
 
 
 ## Acknowledgements
