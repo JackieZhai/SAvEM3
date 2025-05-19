@@ -30,6 +30,43 @@ Codes and data collections are under development. The following tasks are planne
 
 ### Auxiliary learning: hybrid representation of neural morphology for SAM
 
+```mermaid
+flowchart TD
+classDef SAM-HQ fill:#666
+classDef SAM-HQ-Membrane fill:#c66
+points-->sparse_prompt_embed
+boxes-->sparse_prompt_embed
+masks-->dense_prompt_embed
+image_embed--ConvTrans-->Add1[+]:::SAM-HQ
+interm_embed:::SAM-HQ--ConvTrans-->Add1
+Add1-->hq_feature:::SAM-HQ
+dense_prompt_embed-->Add2[+]
+image_embed-->Add2
+iou_token-->tokens
+mask_token-->tokens
+hq_token:::SAM-HQ-->tokens
+mem_mask_token:::SAM-HQ-Membrane-->tokens
+sparse_prompt_embed-->tokens
+tokens--point_embed-->Transformer
+image_pe--position_encode-->Transformer
+Add2--image_embed-->Transformer
+Transformer--queries-->iou_token_out
+Transformer--queries-->mask_token_out
+Transformer--queries-->hq_token_out:::SAM-HQ
+Transformer--keys-->mask_feature
+mask_token_out--MLP-->Matmul1[matmul]
+mask_feature--ConvTrans-->Matmul1
+Matmul1-->SAM_masks
+mask_feature--ConvTrans-Conv-->Add3[+]:::SAM-HQ
+hq_feature-->Add3
+hq_token_out--MLP-->Matmul2
+Add3-->Matmul2[matmul]:::SAM-HQ
+Matmul2-->SAM-HQ_masks:::SAM-HQ
+Transformer--queries-->mem_mask_token_out:::SAM-HQ-Membrane
+Add3-->Matmul3
+mem_mask_token_out--MLP-->Matmul3[matmul]:::SAM-HQ-Membrane
+Matmul3-->SAM-HQ_mem_masks:::SAM-HQ-Membrane
+```
 
 ## SAvEM<sup>3</sup>
 
