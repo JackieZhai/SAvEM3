@@ -37,10 +37,10 @@ classDef SAM-HQ-Membrane fill:#c66
 points-->sparse_prompt_embed
 boxes-->sparse_prompt_embed
 masks-->dense_prompt_embed
-image_embed--ConvTrans-->Add1[+]:::SAM-HQ
+image_embed--ConvTrans-->Add1[Add]:::SAM-HQ
 interm_embed:::SAM-HQ--ConvTrans-->Add1
 Add1-->hq_feature:::SAM-HQ
-dense_prompt_embed-->Add2[+]
+dense_prompt_embed-->Add2[Add]
 image_embed-->Add2
 iou_token-->tokens
 mask_token-->tokens
@@ -57,7 +57,7 @@ Transformer--keys-->mask_feature
 mask_token_out--MLP-->Matmul1[matmul]
 mask_feature--ConvTrans-->Matmul1
 Matmul1-->SAM_masks
-mask_feature--ConvTrans-Conv-->Add3[+]:::SAM-HQ
+mask_feature--ConvTrans-Conv-->Add3[Add]:::SAM-HQ
 hq_feature-->Add3
 hq_token_out--MLP-->Matmul2
 Add3-->Matmul2[matmul]:::SAM-HQ
