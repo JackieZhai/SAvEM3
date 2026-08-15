@@ -1,0 +1,60 @@
+{
+  "selected_volumes": {
+    "ATUM-SEM": [
+      "snemi",
+      "ac3",
+      "axonem-h_0-0-0",
+      "axonem-h_0-0-3584",
+      "axonem-h_0-3584-0",
+      "axonem-h_0-3584-3584",
+      "axonem-h_475-1792-1792",
+      "axonem-h_950-0-0",
+      "axonem-h_950-0-3584"
+    ],
+    "FIB-SEM": [
+      "fib25",
+      "hemibrain_eb-inner"
+    ],
+    "ssTEM": [
+      "cremi_a",
+      "cremi_b"
+    ],
+    "SBEM": [
+      "j0126_255-1407-1535",
+      "j0126_2559-4991-4863",
+      "j0126_2815-5631-4607",
+      "j0126_5119-1023-1663",
+      "segem_1",
+      "segem_33",
+      "segem_64",
+      "segem_100",
+      "segem_951",
+      "segem_979",
+      "segem_1006",
+      "segem_1033",
+      "segem_1070",
+      "segem_1109",
+      "segem_1136"
+    ]
+  },
+  "stats": {
+    "total_masks": 188000,
+    "per_method": {
+      "ATUM-SEM": 100883,
+      "FIB-SEM": 87117
+    },
+    "per_dataset": {
+      "snemi": 22097,
+      "ac3": 42448,
+      "axonem-h_0-0-0": 4591,
+      "axonem-h_0-0-3584": 5534,
+      "axonem-h_0-3584-0": 4154,
+      "axonem-h_0-3584-3584": 6109,
+      "axonem-h_475-1792-1792": 5744,
+      "axonem-h_950-0-0": 5977,
+      "axonem-h_950-0-3584": 4229,
+      "fib25": 87117
+    }
+  },
+  "sampling_rule": "\u6bcf epoch \u6bcf\u6210\u50cf\u6cd5\u968f\u673a\u91c7\u6837 30000 \u5b9e\u4f8b\uff08SBEM \u4e2d SegEM \u5df2\u6309 \u00d72 \u8ba1\u5165\uff09"
+}

@@ -1,0 +1,74 @@
+NAME: 'mem3d_3ds_t3'
+
+MODEL:
+    model_type: 'superhuman_devo-t3_triplet-MSE_shallow'  # 'mala' or 'superhuman'
+    input_nc: 1
+    output_nc: 1
+    if_sigmoid: True
+    # for 'mala':
+    init_mode_mala: 'kaiming'
+    # for 'superhuman':
+    if_skip: 'False'
+    filters: 
+        - 32
+        - 64
+        - 128
+        - 256
+    upsample_mode: 'bilinear'  # 'bilinear', 'nearest', 'transpose', 'transposeS'
+    decode_ratio: 1
+    merge_mode: 'add'  # 'add', 'cat'
+    pad_mode: 'zero'  # 'zero', 'replicate'
+    bn_mode: 'async'  # 'sync', 'async'
+    relu_mode: 'relu'  # 'elu', 'relu', 'leaky'
+    init_mode: 'kaiming_normal'  # 'kaiming_normal', 'kaiming_uniform', 'xavier_normal', 'xavier_uniform'
+
+TRAIN:
+    resume: False
+    if_valid: True
+    if_seg: True
+    save_path: '../models/'
+    pad: 0
+    loss_func: 'WeightedBCELoss'   # 'WeightedMSELoss', 'BCELoss'
+    loss_lambda_func: 'WeightedMSELoss'
+    loss_lambda_feat: 1.0
+    loss_lambda_embed: 1.0
+    if_verse: False
+    separate_weight: False
+
+    opt_type: 'adam'
+    total_iters: 200000
+    warmup_iters: 0
+    base_lr: 0.0001
+    end_lr: 0.0001
+    display_freq: 100
+    valid_freq: 1000
+    save_freq: 1000
+    decay_iters: 100000
+    weight_decay: ~
+    power: 1.5
+
+    batch_size: 4
+    num_workers: 4
+    if_cuda: True
+
+    random_seed: 42  # -1 is none
+
+DATA:
+    dataset_name: 'ac4-triplet'  # 'ac4', 'snemi3d-ac3', 'cremi-A', 'cremi'
+    train_split: 80
+    test_split: 20
+    data_folder: '../data'
+    padding: 50
+    shift_channels: ~
+    if_dilate: False
+    widen_way: True
+
+    if_scale_aug: False
+    if_filp_aug: True
+    if_rotation_aug: True
+    if_intensity_aug: True
+    if_elastic_aug: False
+
+TEST:
+    pad: 0
+    model_name: ''

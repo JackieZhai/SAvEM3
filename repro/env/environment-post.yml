@@ -1,0 +1,17 @@
+name: savem3-post
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - pip
+  - nifty
+  - vigra
+  - affogato
+  - libboost-headers
+  - libboost-devel
+  - hdf5
+  - numpy>=1.26,<2.1
+  - scikit-image
+  - scikit-learn
+  - networkx
+  - tifffile

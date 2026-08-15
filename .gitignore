@@ -128,6 +128,10 @@ ENV/
 env.bak/
 venv.bak/
 
+# Keep reproduction environment setup scripts
+!repro/env/
+!repro/env/**
+
 # Spyder project settings
 .spyderproject
 .spyproject
@@ -160,3 +164,29 @@ cython_debug/
 #.idea/
 
 .DS_Store
+
+# SAvEM3 large binaries and generated data
+*.pth
+*.ckpt
+*.h5
+*.hdf
+*.tif
+*.tiff
+*.zip
+*.gz
+*.npy
+*.npz
+*.pkl
+*.log
+work_dirs/
+pretrained_checkpoint/
+prepared_images/
+prepared_segments/
+prepared_segments_mul_2d/
+prepared_segments_mul_mem/
+prepared_embedding/
+data/AC3-AC4_new/
+data/AC3-AC4/AC4_features.h5
+data/AC3-AC4/AC4_embeddings.h5
+.conda-envs/
+.cache/

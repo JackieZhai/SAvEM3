@@ -1,0 +1,90 @@
+NAME: 'mem3c1_3ds_t3'
+
+MODEL:
+    model_type: 'superhuman_devo-t3_triplet-MSE_shallow'  # 'mala' or 'superhuman'
+    input_nc: 1
+    output_nc: 1
+    if_sigmoid: True
+    # for 'mala':
+    init_mode_mala: 'kaiming'
+    # for 'superhuman':
+    if_skip: 'False'
+    filters: 
+        - 32
+        - 64
+        - 128
+        - 256
+    upsample_mode: 'transposeS'  # 'bilinear', 'nearest', 'transpose', 'transposeS'
+    decode_ratio: 1
+    merge_mode: 'cat'  # 'add', 'cat'
+    pad_mode: 'zero'  # 'zero', 'replicate'
+    bn_mode: 'async'  # 'sync', 'async'
+    relu_mode: 'elu'  # 'elu', 'relu', 'leaky'
+    init_mode: 'kaiming_normal'  # 'kaiming_normal', 'kaiming_uniform', 'xavier_normal', 'xavier_uniform'
+
+TRAIN:
+    resume: False
+    if_valid: True
+    if_seg: True
+    save_path: '../models/'
+    pad: 0
+    loss_func: 'WeightedBCELoss'  # 'WeightedMSELoss', 'BCELoss'
+    loss_lambda_func: 'L1Loss'  # 'WeightedMSELoss'
+    loss_lambda_feat: 1.0
+    loss_lambda_embed: 1.0
+    if_verse: False
+    separate_weight: False
+
+    opt_type: 'adam'
+    total_iters: 200000
+    warmup_iters: 0
+    base_lr: 0.0001
+    end_lr: 0.0001
+    display_freq: 100
+    valid_freq: 1000
+    save_freq: 1000
+    decay_iters: 100000
+    weight_decay: ~
+    power: 1.5
+
+    batch_size: 4
+    num_workers: 4
+    if_cuda: True
+
+    random_seed: 42  # -1 is none
+
+DATA:
+    dataset_name: 'ac4-triplet'  # 'ac4', 'snemi3d-ac3', 'cremi-A', 'cremi'
+    train_split: 80
+    test_split: 20
+    data_folder: '../data'
+    padding: 50
+    shift_channels: ~
+    if_dilate: False
+    widen_way: True
+
+    if_scale_aug: False
+    if_filp_aug: True
+    if_rotation_aug: True
+    if_intensity_aug: True
+    if_elastic_aug: False
+    
+    if_noise_aug: True
+    min_noise_std: 0.01
+    max_noise_std: 0.2
+    if_blur_aug: True
+    min_kernel_size: 3
+    max_kernel_size: 9
+    min_sigma: 0
+    max_sigma: 2
+    if_mask_aug: True
+    if_misalign_aug: True
+    if_sobel_aug: False
+    if_mixup_aug: False
+    if_artifact_aug: False
+    if_missing_aug: False
+    if_blurenhanced_aug: False
+
+TEST:
+    pad: 0
+    model_name: ''

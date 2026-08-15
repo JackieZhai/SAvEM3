@@ -1,0 +1,17 @@
+# SAvEM3 后处理 / 评测环境（Python 3.9）
+# 使用前先创建 conda 环境并安装 repro/env/environment-post.yml 中的
+# nifty / vigra / affogato / libboost 头文件。
+# 然后在 conda 环境中执行：
+#   pip install -r requirements-post.txt
+# 或直接运行 repro/env/setup_postprocess.sh（Apple Silicon 会自动设置编译标志）。
+
+h5py>=3.10
+imageio>=2.34
+networkx>=3.0
+kimimaro>=5.0
+numpy>=1.26,<2.1
+scikit-image>=0.22
+scikit-learn>=1.3
+tifffile>=2024.2
+waterz @ git+https://github.com/funkey/waterz.git
+elf @ git+https://github.com/constantinpape/elf.git@0.5.0
