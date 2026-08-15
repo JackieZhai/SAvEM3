@@ -27,6 +27,7 @@ Official code repository for the BIBM 2024 paper:
 | `sam-hq/` | SAM / HQ-SAM model code (upstream fork) |
 | `saem2/` | SAEM² auxiliary pretraining code (HQ-SAM + membrane token) |
 | `savem3/` | SAvEM³ full-stage distillation code (3D residual U-Net) |
+| `probe-em/` | Probe-EM targeted neuron tracing and SAM 2 semantic verification |
 | `repro/` | Data engine, MPS/CUDA environment scripts, graph-cut, postprocessing, evaluation |
 | `requirements-train.txt` | Python dependencies for SAEM²/SAvEM³ training |
 | `requirements-post.txt` | Python dependencies for waterz / elf / ERL postprocessing |
@@ -55,6 +56,18 @@ cd savem3
 ```bash
 ./repro/env/setup_postprocess.sh
 ./repro/env/run_postprocess.sh repro/savem3/distill_postprocess.py --help
+```
+
+### Probe-EM environment
+
+Probe-EM uses Python 3.10 + SAM 2 and is installed separately:
+
+```bash
+cd probe-em
+# see probe-em/INSTALL.md
+pip install -r requirements.txt
+export PYTORCH_ENABLE_MPS_FALLBACK=1
+python scripts/run_probe_em.py --config configs/config.json
 ```
 
 The postprocessing environment installs:
@@ -124,6 +137,13 @@ On a machine without waterz/elf, disable in-training validation:
 ```bash
 python main_devoem_sparse_membrane_triplet_2.py \
     -c mem3c2c_3ds_t3t --fresh --no-valid --num-workers 0 -m train
+```
+
+### Probe-EM targeted tracing
+
+```bash
+cd probe-em
+python scripts/run_probe_em.py --config configs/config.json
 ```
 
 ### Postprocessing and evaluation

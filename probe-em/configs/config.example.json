@@ -1,0 +1,18 @@
+{
+  "raw_path": "/path/to/raw/precomputed",
+  "seg_path": "/path/to/segmentation/precomputed",
+  "checkpoint_sam": "/path/to/sam2_checkpoint.pt",
+  "model_cfg_sam": "configs/sam2.1/sam2.1_hiera_l.yaml",
+  "voxel_threshold": 200,
+  "sam2_num_frames": 5,
+  "debug_limit": 80,
+  "target_mip": 2,
+  "output_root": "trace_results",
+  "suffix": "sam",
+  "gpu_id": "0",
+  "device": "auto",
+  "max_workers": 4,
+  "slice_workers": 8,
+  "seed_ids": [123456789],
+  "seed_list_file": null
+}

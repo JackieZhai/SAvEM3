@@ -1,0 +1,12 @@
+{
+  "raw_path": "/path/to/raw/precomputed",
+  "seg_path": "/path/to/segmentation/precomputed",
+  "results_folder": "trace_results",
+  "gt_folder": "gt_labels",
+  "host_ip": "127.0.0.1",
+  "bind_address": "0.0.0.0",
+  "port": 0,
+  "data_port_start": 10023,
+  "data_bind_address": "0.0.0.0",
+  "home_position": null
+}
