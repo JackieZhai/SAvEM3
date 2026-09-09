@@ -109,7 +109,7 @@ class VerificationToolNamespace:
         short_msg = msg.split("\n")[0]
         try:
             with self.viewer.config_state.txn() as s:
-                s.status_message = f"{short_msg} (click yellow marker for details)"
+                s.status_messages['probe-em'] = f"{short_msg} (click yellow marker for details)"
         except Exception:
             pass
 
@@ -425,6 +425,7 @@ def main():
         s.layers["image"] = neuroglancer.ImageLayer(source=raw_source)
         s.layers["segmentation"] = neuroglancer.SegmentationLayer(source=seg_source, segments=[])
         s.layout = "4panel"
+        s.show_slices = False
 
     tool = VerificationToolNamespace(viewer, args)
 

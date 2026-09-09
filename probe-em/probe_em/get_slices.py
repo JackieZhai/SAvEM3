@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 import pandas as pd
 import cv2
 import os
@@ -101,10 +101,10 @@ def prepare_sam2_video_simple(seg_vol, raw_vol, center, target_id, neighbor_id, 
     
     def check_layer_ids(z_idx):
         
-        if z_idx < 0 or z_idx >= seg_vol.bounds.maxpt[2]:
+        if z_idx < seg_vol.bounds.minpt[2] or z_idx >= seg_vol.bounds.maxpt[2]:
             return False, False
 
-        start = np.maximum(center - r_vox, 0)
+        start = np.maximum(center - r_vox, seg_vol.bounds.minpt)
         end = np.minimum(center + r_vox + 1, seg_vol.bounds.maxpt)
         start[2], end[2] = z_idx, z_idx + 1
 
@@ -164,13 +164,13 @@ def prepare_sam2_video_simple(seg_vol, raw_vol, center, target_id, neighbor_id, 
 
     
     
-    start_xy = np.maximum(center - r_vox, 0)
+    start_xy = np.maximum(center - r_vox, seg_vol.bounds.minpt)
     end_xy = np.minimum(center + r_vox + 1, seg_vol.bounds.maxpt)
 
     neighbor_frame_idx = -1  
 
     for i, z_curr in enumerate(z_sequence):
-        if z_curr < 0 or z_curr >= seg_vol.bounds.maxpt[2]: continue
+        if z_curr < seg_vol.bounds.minpt[2] or z_curr >= seg_vol.bounds.maxpt[2]: continue
 
         start = start_xy.copy();
         end = end_xy.copy()
@@ -220,8 +220,8 @@ def prepare_sam2_video_region(seg_vol, raw_vol, center, target_id, neighbor_id, 
 
     
     def check_layer_ids(z_idx):
-        if z_idx < 0 or z_idx >= seg_vol.bounds.maxpt[2]: return False, False
-        start = np.maximum(center - r_vox, 0)
+        if z_idx < seg_vol.bounds.minpt[2] or z_idx >= seg_vol.bounds.maxpt[2]: return False, False
+        start = np.maximum(center - r_vox, seg_vol.bounds.minpt)
         end = np.minimum(center + r_vox + 1, seg_vol.bounds.maxpt)
         start[2], end[2] = z_idx, z_idx + 1
         seg = np.array(seg_vol[start[0]:end[0], start[1]:end[1], start[2]:end[2]]).squeeze()
@@ -265,13 +265,13 @@ def prepare_sam2_video_region(seg_vol, raw_vol, center, target_id, neighbor_id, 
     os.makedirs(seg_dir, exist_ok=True)
 
     
-    start_xy = np.maximum(center - r_vox, 0)
+    start_xy = np.maximum(center - r_vox, seg_vol.bounds.minpt)
     end_xy = np.minimum(center + r_vox + 1, seg_vol.bounds.maxpt)
 
     neighbor_frame_idx = -1
 
     for i, z_curr in enumerate(z_sequence):
-        if z_curr < 0 or z_curr >= seg_vol.bounds.maxpt[2]: continue
+        if z_curr < seg_vol.bounds.minpt[2] or z_curr >= seg_vol.bounds.maxpt[2]: continue
 
         start = start_xy.copy();
         end = end_xy.copy()
@@ -355,7 +355,7 @@ def process_single_connection(seg_vol, raw_vol, conn, output_dir, output_dir3d,
 
             
             vol_max = seg_vol.bounds.maxpt
-            start = np.maximum(raw_start, 0)
+            start = np.maximum(raw_start, seg_vol.bounds.minpt)
             end = np.minimum(raw_end, vol_max)
 
             
@@ -371,7 +371,7 @@ def process_single_connection(seg_vol, raw_vol, conn, output_dir, output_dir3d,
             final_box = (start, end)
 
             
-            touching_min = np.any(raw_start[:2] < 0)  
+            touching_min = np.any(raw_start[:2] < seg_vol.bounds.minpt[:2])
             touching_max = np.any(raw_end[:2] > vol_max[:2])  
             if touching_min or touching_max:
                 break
@@ -500,7 +500,7 @@ def process_single_connection_multi_slice(seg_vol, raw_vol, conn, output_dir, ou
             raw_start = center - r_vox
             raw_end = center + r_vox + 1
             vol_max = seg_vol.bounds.maxpt
-            start = np.maximum(raw_start, 0)
+            start = np.maximum(raw_start, seg_vol.bounds.minpt)
             end = np.minimum(raw_end, vol_max)
 
             
@@ -508,7 +508,7 @@ def process_single_connection_multi_slice(seg_vol, raw_vol, conn, output_dir, ou
             end[2] = cz + 1
 
             
-            touching_min = np.any(raw_start[:2] < 0)
+            touching_min = np.any(raw_start[:2] < seg_vol.bounds.minpt[:2])
             touching_max = np.any(raw_end[:2] > vol_max[:2])
             if touching_min or touching_max:
                 break  
@@ -567,7 +567,7 @@ def process_single_connection_multi_slice(seg_vol, raw_vol, conn, output_dir, ou
             current_z = cz + z_off
 
             
-            if current_z < 0 or current_z >= seg_vol.bounds.maxpt[2]:
+            if current_z < seg_vol.bounds.minpt[2] or current_z >= seg_vol.bounds.maxpt[2]:
                 continue
 
             
@@ -662,20 +662,25 @@ def process_single_connection_multi_slice(seg_vol, raw_vol, conn, output_dir, ou
 
 
 def process_single_connection_wrapper(args):
-    raw_path, seg_path, conn, output_dir, output_dir3d, num_frames = args
+    raw_path, seg_path, conn, output_dir, output_dir3d, num_frames, z_field = args
 
-    
-    
-    seg_vol = CloudVolume(seg_path, mip=0, parallel=False, fill_missing=True, cache=False)
-    raw_vol = CloudVolume(raw_path, mip=0, parallel=False, fill_missing=True, cache=False)
+    seg_vol = CloudVolume(seg_path, mip=0, parallel=False, fill_missing=False, cache=False)
+    raw_vol = CloudVolume(raw_path, mip=0, parallel=False, fill_missing=False, cache=False)
 
-    
+    if z_field is not None:
+        from probe_em.z_align import AlignedVolume
+        seg_vol = AlignedVolume(seg_vol, z_field)
+        raw_vol = AlignedVolume(raw_vol, z_field)
+
+    if not np.array_equal(seg_vol.resolution, raw_vol.resolution):
+        raise ValueError('Raw and segmentation voxel resolutions must match')
     return process_single_connection(seg_vol, raw_vol, conn, output_dir, output_dir3d, num_frames=num_frames)
     # return process_single_connection_multi_slice(seg_vol, raw_vol, conn, output_dir, output_dir3d, num_frames=num_frames)
 
 
 
-def get_slices(raw_path, seg_path, connections, output_folder, output_folder3d, max_workers=8, num_frames=5):
+def get_slices(raw_path, seg_path, connections, output_folder, output_folder3d,
+               max_workers=8, num_frames=5, z_field=None):
     os.makedirs(output_folder, exist_ok=True)
     os.makedirs(output_folder3d, exist_ok=True)
 
@@ -684,10 +689,10 @@ def get_slices(raw_path, seg_path, connections, output_folder, output_folder3d, 
     else:
         connections_list = connections
 
-    
+
     tasks = []
     for conn in connections_list:
-        tasks.append((raw_path, seg_path, conn, output_folder, output_folder3d, num_frames))
+        tasks.append((raw_path, seg_path, conn, output_folder, output_folder3d, num_frames, z_field))
 
     # print(f"Starting Multi-Processing with {max_workers} workers...")
 
@@ -696,7 +701,9 @@ def get_slices(raw_path, seg_path, connections, output_folder, output_folder3d, 
 
     
     
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+    # Slice reads and OpenCV transforms do not need CUDA worker processes.
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(process_single_connection_wrapper, t) for t in tasks]
 
         for f in tqdm(as_completed(futures), total=len(futures)):
@@ -712,9 +719,9 @@ def get_slices(raw_path, seg_path, connections, output_folder, output_folder3d, 
                     z_gap_connections.append(result['conn'])
                     # print(f"Found Z-Gap: {result['msg']}")
                 elif status == 'error':
-                    print(result['msg'])
+                    raise RuntimeError(result['msg'])
             except Exception as e:
-                print(f"Task Timeout or Error: {e}")
+                raise RuntimeError(f"Slice preparation failed: {e}") from e
 
     return z_gap_connections
 

@@ -1,146 +1,172 @@
-"""M4/M6 · 蒸馏模型的后处理管线：膜图 → 过分割 → 2D multicut 预整合 → WaterZ/LMC 聚合。
+"""Boundary → slice watershed → 2D multicut → WaterZ / local 3D multicut.
 
-论文 Implementation Details 原话：
-    "After the step of distance transformation-based watersheds for boundary maps,
-     we first preprocess oversegmentation using the 2D multi-cut as an initial
-     integration of fragments."
-
-流程（与 scripts_savem3/main_devoem_sparse_membrane_triplet_2.py 的验证段一致，并加上
-论文要求的 2D multicut 预整合）：
-    1. 输入膜概率图（模型滑窗推理输出 out_affs，1ch，sigmoid 后 0~1）；
-    2. elf distance_transform_watershed（阈值/σ 可调）生成 fragments；
-    3. 2D multicut 逐片预整合（elf.compute_rag + boundary features + kernighan-lin）；
-    4. WaterZ：waterz.agglomerate(OneMinus<HistogramQuantileAffinity<...>>)；
-    5. LMC：elf 3D multicut（lmc.mc_baseline 同款）；
-    6. 保存 seg_waterz.hdf / seg_lmc.hdf / seg_mc2d.hdf，并对 GT 计算 VoI/ARand。
-
-用法：
-    python distill_postprocess.py --affs out_affs.h5 --gt AC3_labels.h5 \
-        --out-dir ./postprocess --ws-threshold 0.25 --sigma-seeds 2.0
+The historical 'LMC' output name is retained, but no lifted edges are added.
+See README.md for probability polarity and coordinate conventions.
 """
 import argparse
-import os
+import json
+from pathlib import Path
+import sys
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from repro.volume import (load_volume, save_volume, prediction_maps, compact_labels,
+                          unique_slice_labels, edge_affinity_means, validate_labels)
 
-def load_h5_main(path):
-    import h5py
-    with h5py.File(path, 'r') as f:
-        return f['main'][:]
+load_h5_main = load_volume
 
 
 def watershed_oversegment(affs, threshold=0.25, sigma_seeds=2.0):
-    """距离变换分水岭过分割。affs: (1,Z,H,W) 边界概率。"""
-    import elf.segmentation.watershed as ws
-    bmap = affs[0]
-    fragments, _ = ws.distance_transform_watershed(bmap, threshold=threshold, sigma_seeds=sigma_seeds)
-    return fragments.astype('uint64')
+    from elf.segmentation.watershed import distance_transform_watershed
+    boundary, _ = prediction_maps(affs)
+    sections = [distance_transform_watershed(section, threshold=threshold,
+                sigma_seeds=sigma_seeds)[0] for section in boundary]
+    return unique_slice_labels(np.stack(sections).astype(np.uint64))
+
+
+def project_foreground(rag, node_labels, fragments):
+    from elf.segmentation.features import project_node_labels_to_pixels
+    result = project_node_labels_to_pixels(rag, np.asarray(node_labels, dtype=np.uint64) + 1)
+    result[fragments == 0] = 0
+    return compact_labels(result)
+
+
+def protect_background(costs, uv):
+    costs = np.array(costs, dtype=np.float64, copy=True)
+    costs[np.any(uv == 0, axis=1)] = -max(float(np.abs(costs).sum()) + 1, 1.0)
+    return costs
 
 
 def premerge_2d_multicut(fragments, bmap, beta=0.5):
-    """2D multicut 逐片预整合（论文 Implementation Details）。"""
-    import elf.segmentation.features as feats
-    import elf.segmentation.multicut as mc
-    out = np.zeros_like(fragments)
-    for z in range(fragments.shape[0]):
-        frag = fragments[z]
-        rag = feats.compute_rag(frag)
-        costs = feats.compute_boundary_features(rag, bmap[z])[:, 0]
-        costs = mc.transform_probabilities_to_costs(costs, edge_sizes=costs, beta=beta)
-        seg = mc.multicut_kernighan_lin(rag, costs)
-        out[z] = feats.project_node_labels_to_pixels(rag, seg)
-    return out
+    import elf.segmentation.features as features
+    import elf.segmentation.multicut as multicut
+    validate_labels(fragments)
+    if bmap.shape != fragments.shape:
+        raise ValueError("Boundary and fragment shapes differ")
+    out = np.zeros_like(fragments, dtype=np.uint64)
+    for z in range(len(fragments)):
+        frag = compact_labels(fragments[z])
+        if not np.any(frag):
+            continue
+        rag = features.compute_rag(frag)
+        if rag.numberOfEdges == 0:
+            out[z] = frag
+            continue
+        statistics = features.compute_boundary_mean_and_length(rag, bmap[z].astype(np.float32))
+        costs = multicut.transform_probabilities_to_costs(statistics[:, 0],
+                                                         edge_sizes=statistics[:, -1], beta=beta)
+        costs = protect_background(costs, rag.uvIds())
+        nodes = multicut.multicut_kernighan_lin(rag, costs)
+        out[z] = project_foreground(rag, nodes, frag)
+    return unique_slice_labels(out)
 
 
-def waterz_agglomerate(affs, fragments, thresholds=[0.3, 0.4, 0.5]):
+def waterz_agglomerate(affs, fragments, thresholds=(0.3, 0.4, 0.5)):
     import waterz
-    sf = 'OneMinus<HistogramQuantileAffinity<RegionGraphType, 50, ScoreValue, 256>>'
-    segs = list(waterz.agglomerate(affs.astype(np.float32), thresholds,
-                                   fragments=fragments, scoring_function=sf,
-                                   discretize_queue=256))
-    return {t: s.astype('uint64') for t, s in zip(thresholds, segs)}
+    validate_labels(fragments)
+    _, affinity = prediction_maps(affs, "affinity")
+    if fragments.shape != affinity.shape[1:]:
+        raise ValueError("Affinity and fragment shapes differ")
+    fragments = compact_labels(fragments)
+    thresholds = list(thresholds)
+    if thresholds != sorted(thresholds) or any(not 0 <= t <= 1 for t in thresholds):
+        raise ValueError("WaterZ thresholds must be sorted and in [0, 1]")
+    scoring = 'OneMinus<HistogramQuantileAffinity<RegionGraphType, 50, ScoreValue, 256>>'
+    results = {}
+    for threshold, result in zip(thresholds, waterz.agglomerate(
+            np.ascontiguousarray(affinity, dtype=np.float32), thresholds,
+            fragments=np.ascontiguousarray(fragments, dtype=np.uint64),
+            scoring_function=scoring, discretize_queue=256)):
+        # WaterZ may reuse its output buffer between yields.
+        result = result.astype(np.uint64, copy=True)
+        result[fragments == 0] = 0
+        results[threshold] = result
+    return results
 
 
-def lmc_agglomerate(affs):
-    """3D multicut（scripts_savem3/utils/lmc.py::mc_baseline 同款）。"""
-    import elf.segmentation.features as feats
-    import elf.segmentation.multicut as mc
-    import elf.segmentation.watershed as ws
-    bmap = np.maximum(affs[1], affs[2]) if affs.shape[0] >= 3 else affs[0]
-    fragments = np.stack([ws.distance_transform_watershed(bmap[z], threshold=0.25, sigma_seeds=2.0)[0]
-                          for z in range(bmap.shape[0])])
-    rag = feats.compute_rag(fragments)
-    try:
-        costs = feats.compute_affinity_features(rag, affs, [[-1, 0, 0], [0, -1, 0], [0, 0, -1]])[:, 0]
-    except RuntimeError:
-        costs = feats.compute_boundary_features(rag, bmap)[:, 0]
-    costs = mc.transform_probabilities_to_costs(costs)
-    seg = mc.multicut_kernighan_lin(rag, costs)
-    return feats.project_node_labels_to_pixels(rag, seg).astype('uint64')
+def lmc_agglomerate(affs, fragments=None, edge_feats=None, weights=None, beta=0.5):
+    import elf.segmentation.features as features
+    import elf.segmentation.multicut as multicut
+    boundary, affinity = prediction_maps(affs)
+    if fragments is None:
+        fragments = watershed_oversegment(boundary)
+    validate_labels(fragments)
+    if not np.any(fragments):
+        return fragments.astype(np.uint64)
+    original_ids = np.unique(fragments)
+    if original_ids[0] != 0:
+        original_ids = np.concatenate((np.zeros(1, dtype=original_ids.dtype), original_ids))
+    fragments = compact_labels(fragments)
+    rag = features.compute_rag(fragments)
+    uv = rag.uvIds()
+    if not len(uv):
+        return compact_labels(fragments)
+    mean_affinity, _ = edge_affinity_means(fragments, affinity, uv)
+    # ELF expects boundary / cut probability, not affinity.
+    costs = multicut.transform_probabilities_to_costs(1.0 - mean_affinity, beta=beta)
+    weights = weights or {"cos": 1.0, "iou": 1.0, "ioa": 0.0, "iob": 0.0}
+    if edge_feats:
+        for index, (u, v) in enumerate(uv):
+            u, v = original_ids[int(u)], original_ids[int(v)]
+            evidence = edge_feats.get(f"{u},{v}", edge_feats.get(f"{v},{u}", {}))
+            # Positive costs penalize a cut: similarity must be ADDED.
+            costs[index] += sum(weight * evidence.get(name, 0.0) for name, weight in weights.items())
+    costs = protect_background(costs, uv)
+    nodes = multicut.multicut_kernighan_lin(rag, costs)
+    return project_foreground(rag, nodes, fragments)
 
 
 def evaluate(seg, gt):
     from skimage.metrics import adapted_rand_error, variation_of_information
+    validate_labels(seg)
+    validate_labels(gt)
+    if seg.shape != gt.shape or not np.any(gt):
+        raise ValueError("Evaluation requires matching shapes and nonempty foreground GT")
     arand = adapted_rand_error(gt, seg, ignore_labels=(0,))[0]
-    vs, vm = variation_of_information(gt, seg, ignore_labels=(0,))
-    return arand, vs + vm, vs, vm
+    split, merge = variation_of_information(gt, seg, ignore_labels=(0,))
+    return float(arand), float(split + merge), float(split), float(merge)
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--affs', required=True, help='模型输出的膜概率图 h5（main: (1,Z,H,W) 或 (3,Z,H,W)）')
-    ap.add_argument('--gt', default=None, help='GT 标签 h5（可选，给则算 VoI/ARand）')
-    ap.add_argument('--out-dir', default='./postprocess')
-    ap.add_argument('--ws-threshold', type=float, default=0.25)
-    ap.add_argument('--sigma-seeds', type=float, default=2.0)
-    ap.add_argument('--skip-2d-mc', action='store_true', help='跳过 2D multicut 预整合（对照）')
-    args = ap.parse_args()
-    os.makedirs(args.out_dir, exist_ok=True)
-
-    affs = load_h5_main(args.affs).astype(np.float32)
-    if affs.shape[0] == 3:                      # 3ch affinity（旧模型）→ 边界 = 1-max
-        bmap = 1.0 - np.max(affs, axis=0)
-        affs1 = affs[None, ...]
-    else:
-        bmap = affs[0]
-        affs1 = affs
-
-    print('1) 距离变换分水岭过分割 ...')
-    frag = watershed_oversegment(affs1[:1] if affs1.shape[0] > 1 else affs1, args.ws_threshold, args.sigma_seeds)
-    print(f'   fragments: {len(np.unique(frag))}')
-
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--affs', required=True, help='ZYX / 1ZYX boundary, or 3ZYX affinity H5/TIFF/NPY')
+    parser.add_argument('--input-kind', choices=['auto', 'boundary', 'affinity'], default='auto')
+    parser.add_argument('--gt')
+    parser.add_argument('--out-dir', default='./postprocess')
+    parser.add_argument('--ws-threshold', type=float, default=0.25)
+    parser.add_argument('--sigma-seeds', type=float, default=2.0)
+    parser.add_argument('--thresholds', default='0.3,0.4,0.5')
+    parser.add_argument('--skip-2d-mc', action='store_true')
+    parser.add_argument('--method', choices=['both', 'waterz', 'multicut'], default='both')
+    args = parser.parse_args()
+    boundary, affinity = prediction_maps(load_volume(args.affs), args.input_kind)
+    fragments = watershed_oversegment(boundary, args.ws_threshold, args.sigma_seeds)
+    output = Path(args.out_dir)
+    save_volume(output / 'fragments_ws.h5', fragments)
     if not args.skip_2d_mc:
-        print('2) 2D multicut 预整合 ...')
-        frag = premerge_2d_multicut(frag, bmap)
-        print(f'   after 2D-multicut: {len(np.unique(frag))}')
-        import h5py
-        with h5py.File(os.path.join(args.out_dir, 'seg_mc2d.hdf'), 'w') as f:
-            f.create_dataset('main', data=frag, compression='gzip')
-
-    print('3) WaterZ 聚合 ...')
-    waterz_input = np.repeat(affs1[0:1], 3, axis=0) if affs1.shape[0] == 1 else affs1
-    segs_wz = waterz_agglomerate(waterz_input, frag)
-    for t, s in segs_wz.items():
-        import h5py
-        with h5py.File(os.path.join(args.out_dir, f'seg_waterz_t{t}.hdf'), 'w') as f:
-            f.create_dataset('main', data=s, compression='gzip')
-
-    print('4) LMC 聚合 ...')
-    lmc_input = np.repeat(affs1[0][None, ...], 3, axis=0) if affs1.shape[0] == 1 else affs1
-    seg_lmc = lmc_agglomerate(lmc_input)
-    import h5py
-    with h5py.File(os.path.join(args.out_dir, 'seg_lmc.hdf'), 'w') as f:
-        f.create_dataset('main', data=seg_lmc, compression='gzip')
-
-    if args.gt:
-        gt = load_h5_main(args.gt).astype('uint64')
-        print('\n== 评测（VoI↓ / ARand↓）==')
-        for t, s in segs_wz.items():
-            arand, voi, vs, vm = evaluate(s, gt)
-            print(f'WaterZ t={t}: VoI={voi:.4f} (split {vs:.4f} / merge {vm:.4f}), ARand={arand:.4f}')
-        arand, voi, vs, vm = evaluate(seg_lmc, gt)
-        print(f'LMC      : VoI={voi:.4f} (split {vs:.4f} / merge {vm:.4f}), ARand={arand:.4f}')
+        fragments = premerge_2d_multicut(fragments, boundary)
+        save_volume(output / 'seg_mc2d.hdf', fragments)
+    save_volume(output / 'fragments.h5', fragments)
+    save_volume(output / 'affinities.h5', affinity, kind='affinity', offsets='-z,-y,-x')
+    results = {}
+    if args.method in ('both', 'waterz'):
+        for threshold, seg in waterz_agglomerate(affinity, fragments,
+                                                [float(v) for v in args.thresholds.split(',')]).items():
+            results[f'seg_waterz_t{threshold}'] = seg
+    if args.method in ('both', 'multicut'):
+        results['seg_lmc'] = lmc_agglomerate(affinity, fragments)
+    report = {'input': str(Path(args.affs).resolve()), 'input_kind': args.input_kind,
+              'shape_zyx': list(boundary.shape), 'multicut_solver': 'local RAG Kernighan-Lin',
+              'premerge_2d': not args.skip_2d_mc, 'metrics': {}}
+    gt = load_volume(args.gt) if args.gt else None
+    for name, seg in results.items():
+        save_volume(output / f'{name}.hdf', seg)
+        if gt is not None:
+            values = evaluate(seg, gt)
+            report['metrics'][name] = dict(zip(['arand', 'voi', 'voi_split', 'voi_merge'], values))
+    (output / 'report.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+    print(json.dumps(report, indent=2))
 
 
 if __name__ == '__main__':

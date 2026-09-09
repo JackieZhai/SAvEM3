@@ -15,7 +15,7 @@ import shutil
 import warnings
 import pandas as pd
 
-from probe_em.device import resolve_device, autocast_dtype, sam2_config_name
+from probe_em.device import resolve_device, inference_autocast, sam2_config_name
 
 
 warnings.filterwarnings("ignore")
@@ -42,7 +42,10 @@ def calculate_collision(pred_mask, seg_npy, target_id, min_pixels=50, coverage_t
     
     if seg_npy.shape != mask_bool.shape:
         
-        seg_npy = cv2.resize(seg_npy, (mask_bool.shape[1], mask_bool.shape[0]), interpolation=cv2.INTER_NEAREST)
+        # OpenCV cannot resize uint64 labels without losing segment IDs.
+        rows = np.arange(mask_bool.shape[0]) * seg_npy.shape[0] // mask_bool.shape[0]
+        columns = np.arange(mask_bool.shape[1]) * seg_npy.shape[1] // mask_bool.shape[1]
+        seg_npy = seg_npy[rows[:, None], columns[None, :]]
 
     covered_pixels = seg_npy[mask_bool]
 
@@ -83,8 +86,8 @@ def process_single_video_folder_collision(folder_path, predictor, output_root):
     
     try:
         target_id = int(base_name.split('_')[0])
-    except:
-        return []
+    except (ValueError, IndexError) as error:
+        raise ValueError(f'Invalid ASP case name: {base_name}') from error
 
     video_dir = os.path.join(folder_path, "video_frames")
     seg_dir = os.path.join(folder_path, "segmentation_data")  
@@ -93,13 +96,14 @@ def process_single_video_folder_collision(folder_path, predictor, output_root):
     
     
     if not os.path.exists(video_dir) or not os.path.exists(seg_dir):
-        return []
+        raise FileNotFoundError(f'Incomplete ASP case: {folder_path}')
 
     
     inference_state = predictor.init_state(video_path=video_dir)
 
     
-    if not os.path.exists(prompt_path): return []
+    if not os.path.exists(prompt_path):
+        raise FileNotFoundError(prompt_path)
     prompt_img = cv2.imread(prompt_path, cv2.IMREAD_UNCHANGED)
     prompt_bool = (prompt_img > 0)
 
@@ -128,6 +132,8 @@ def process_single_video_folder_collision(folder_path, predictor, output_root):
         
         
         seg_npy_path = os.path.join(seg_dir, f"{out_frame_idx:05d}_seg.npy")
+        if not os.path.isfile(seg_npy_path):
+            raise FileNotFoundError(seg_npy_path)
 
         if os.path.exists(seg_npy_path):
             seg_npy = np.load(seg_npy_path)  # uint64 array
@@ -183,14 +189,18 @@ def process_single_video_folder_collision(folder_path, predictor, output_root):
 # ==========================================
 
 # ==========================================
-def find_merge_candidates_3d_region(checkpoint, model_cfg, input_dir, output_dir, save_temp=False, device=None):
+def find_merge_candidates_3d_region(checkpoint, model_cfg, input_dir, output_dir, save_temp=False,
+                                    device=None, predictor=None, strict=True):
     os.makedirs(output_dir, exist_ok=True)
 
+    subfolders = sorted(path for path in glob.glob(os.path.join(input_dir, '*')) if os.path.isdir(path))
+    if not subfolders:
+        return []
     device = resolve_device(device)
-    dtype = autocast_dtype(device)
-    print(f"Loading SAM 2 Video on {device} ({dtype})...")
-
-    sam2_predictor = build_sam2_video_predictor(sam2_config_name(model_cfg), checkpoint, device=device)
+    if predictor is None:
+        sam2_predictor = build_sam2_video_predictor(sam2_config_name(model_cfg), checkpoint, device=device)
+    else:
+        sam2_predictor = predictor() if callable(predictor) else predictor
 
     
     subfolders = sorted(glob.glob(os.path.join(input_dir, "*")))
@@ -201,7 +211,7 @@ def find_merge_candidates_3d_region(checkpoint, model_cfg, input_dir, output_dir
     all_logs = []
     connected_neighbors = set()
 
-    with torch.inference_mode(), torch.autocast(device, dtype=dtype):
+    with torch.inference_mode(), inference_autocast(device):
         for folder in tqdm(subfolders, desc="SAM2 3D Collision"):
             try:
                 
@@ -218,6 +228,8 @@ def find_merge_candidates_3d_region(checkpoint, model_cfg, input_dir, output_dir
                 print(f"Error processing {folder}: {e}")
                 import traceback
                 traceback.print_exc()
+                if strict:
+                    raise
 
     
     if os.path.exists(input_dir) and (not save_temp):

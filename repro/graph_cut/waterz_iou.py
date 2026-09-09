@@ -1,26 +1,20 @@
-"""M5 · 提示图割 · WaterZ 加权 IoU 版（论文 §2.3 WaterZ 段原话：
+"""WaterZ with SAM prompt IoU evidence on matching voxel interfaces.
 
-"To simplify the code, we only use a weighted IoU score (our edge features) here
- to increase the maximum affinity between the adjacent oversegments. Following
- funke2018large, we initialize the edge scores by using 1 minus the maximum
- affinity between the oversegments and adopting the quantile merge function to
- update them."
-
-实现选择（对论文"简化版"的体素级实现）：
-    对每对相邻 fragment (u,v)，取两者交界处体素，把该处膜概率提升为
-        aff_new = max(aff, IoU(u,v))
-    （IoU 越高 → 交界亲和度越接近 1 → waterz 按 OneMinus<HistogramQuantileAffinity>
-    打分时更易合并）。之后按标准 waterz 流程聚合。
-
-用法：
-    python waterz_iou.py --affs out_affs.h5 --fragments frag.h5 \
-        --edge-feats graph_feats/edge_feats.json [--gt AC3_labels.h5] --out-dir ./seg
+A one-channel input is boundary probability and is converted to affinity first.
+Only the negative-axis edge joining the specified u/v pair is boosted. This is
+an explicit voxel-edge approximation, not a custom WaterZ graph-score kernel.
+See README.md for paper and implementation differences.
 """
 import argparse
 import json
 import os
 
 import numpy as np
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from repro.volume import prediction_maps, neighbour_slices, validate_labels
 
 
 def load_h5(path):
@@ -29,31 +23,36 @@ def load_h5(path):
         return f['main'][:]
 
 
-def boost_interfaces(affs, frag, edge_feats, dilate=1):
-    """按边 IoU 提升相邻 fragment 交界处的最大亲和度。"""
-    from scipy import ndimage
-    out = affs.copy()
-    for key, d in edge_feats.items():
-        if 'iou' not in d or d['iou'] <= 0:
+def boost_interfaces(affs, frag, edge_feats, weight=1.0):
+    """Boost only the directed voxel edge joining the specified fragment pair.
+
+    No dilation: unrelated interfaces and other affinity directions are untouched.
+    This is a voxel-level approximation of the paper's edge-score modification.
+    """
+    validate_labels(frag)
+    _, affinity = prediction_maps(affs)
+    if affinity.shape[1:] != frag.shape or not 0 <= weight <= 1:
+        raise ValueError('Mismatched shapes or IoU weight outside [0,1]')
+    out = affinity.copy()
+    scores = {}
+    for key, evidence in edge_feats.items():
+        u, v = sorted(map(int, key.split(',')))
+        score = float(evidence.get('iou', 0))
+        if not np.isfinite(score) or not 0 <= score <= 1:
+            raise ValueError('IoU evidence must be a finite probability')
+        if u and v:
+            scores[(u, v)] = weight * score
+    for axis in range(3):
+        current, previous = neighbour_slices(axis)
+        a, b = frag[current], frag[previous]
+        mask = (a != b) & (a != 0) & (b != 0)
+        if not mask.any():
             continue
-        u, v = map(int, key.split(','))
-        if u == 0 or v == 0:
-            continue
-        mu = frag == u
-        mv = frag == v
-        # 交界 = 双方各自膨胀后的交叠带（体素级近似）
-        iface = np.logical_and(ndimage.binary_dilation(mu, iterations=dilate),
-                               ndimage.binary_dilation(mv, iterations=dilate))
-        if iface.sum() == 0:
-            continue
-        # 提升 z 向与面内最大亲和（affs 为 3ch affinity 时取 max；1ch 膜概率时直接提升概率）
-        if out.shape[0] >= 3:
-            mx = out[:, iface].max(axis=0, keepdims=True)
-            boost = np.maximum(mx, d['iou'])
-            for c in range(min(3, out.shape[0])):
-                out[c][iface] = np.maximum(out[c][iface], boost[0])
-        else:
-            out[0][iface] = np.maximum(out[0][iface], d['iou'])
+        pairs, inverse = np.unique(np.sort(np.stack((a[mask], b[mask]), axis=1), axis=1),
+                                   axis=0, return_inverse=True)
+        values = np.array([scores.get((int(u), int(v)), 0.0) for u, v in pairs])[inverse]
+        plane = out[axis][current]
+        plane[mask] = np.maximum(plane[mask], values)
     return out
 
 
@@ -61,7 +60,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--affs', required=True)
     ap.add_argument('--fragments', required=True)
-    ap.add_argument('--edge-feats', required=True, help='edge_feats.json（含 iou 字段）')
+    ap.add_argument('--edge-feats', required=True, help='edge_feats.json containing iou fields')
     ap.add_argument('--gt', default=None)
     ap.add_argument('--out-dir', default='./seg')
     ap.add_argument('--thresholds', type=str, default='0.3,0.4,0.5')
@@ -73,21 +72,18 @@ def main():
     with open(args.edge_feats) as f:
         ef = json.load(f)
 
-    print('1) 按提示 IoU 提升交界亲和度 ...')
+    print('1) Boost interface affinities using prompt IoU ...')
     affs = boost_interfaces(affs, frag, ef)
 
-    print('2) waterz 聚合（OneMinus<HistogramQuantileAffinity>）...')
-    import waterz
-    sf = 'OneMinus<HistogramQuantileAffinity<RegionGraphType, 50, ScoreValue, 256>>'
+    print('2) WaterZ agglomeration (OneMinus<HistogramQuantileAffinity>)...')
+    from repro.savem3.distill_postprocess import waterz_agglomerate
     thresholds = [float(t) for t in args.thresholds.split(',')]
-    segs = list(waterz.agglomerate(affs.astype(np.float32), thresholds,
-                                   fragments=frag, scoring_function=sf,
-                                   discretize_queue=256))
+    segs = list(waterz_agglomerate(affs, frag, thresholds).values())
     import h5py
     if args.gt:
         gt = load_h5(args.gt).astype('uint64')
         from skimage.metrics import adapted_rand_error, variation_of_information
-        print('\n== WaterZ+IoU 评测（VoI↓ / ARand↓）==')
+        print('\n== WaterZ+IoU evaluation (VoI / ARand; lower is better)==')
         for t, s in zip(thresholds, segs):
             s = s.astype('uint64')
             with h5py.File(os.path.join(args.out_dir, f'seg_waterz_iou_t{t}.hdf'), 'w') as f:
@@ -99,7 +95,7 @@ def main():
         for t, s in zip(thresholds, segs):
             with h5py.File(os.path.join(args.out_dir, f'seg_waterz_iou_t{t}.hdf'), 'w') as f:
                 f.create_dataset('main', data=s.astype('uint64'), compression='gzip')
-    print(f'完成 -> {args.out_dir}/')
+    print(f'Done -> {args.out_dir}/')
 
 
 if __name__ == '__main__':

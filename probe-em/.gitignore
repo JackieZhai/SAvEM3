@@ -6,7 +6,7 @@ __pycache__/
 config.json
 verification_config.json
 ntracing.txt
-requirements - 副本.txt
+requirements - *.txt
 .venv/
 venv/
 env/
@@ -14,6 +14,9 @@ env/
 .idea/
 .vscode/
 docs_zh_local/
+README_zh.md
+LOCAL_NOTES.md
+configs/config.test*.json
 
 data/
 datasets/
@@ -39,3 +42,9 @@ slices_output*/
 *.tiff
 
 *.log
+
+volumes_local/
+verification_figs/
+volumes_local_aligned/
+demo_session*/
+demo_reviews/

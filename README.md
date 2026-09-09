@@ -1,5 +1,17 @@
 # SAEM²-SAEvM³
 
+Maintained entry points: [Reproduction workflow and paper differences](docs/REPRODUCTION.md) ·
+[SAvEM³ training/inference](repro/savem3/README.md) ·
+[Probe-EM / Neuroglancer demo](probe-em/scripts/README.md).
+
+See the [validation record](docs/VALIDATION.md) for local tests, demo provenance, and outstanding evaluations.
+
+The maintained workflow includes three-target teacher export, standalone distillation and resume,
+sliding-window/ROI inference, consistent postprocessing and graph-cut interfaces, explicit Probe-EM
+tracing states, and local Neuroglancer review. The original commands below remain for historical
+experiment comparison; use the reproduction guide for new data. Short runs and demos do not
+establish reproduction of the paper's quantitative results.
+
 **SAEM²-SAEvM³: Pretrained and Distilled Models for General-purpose 3D Neuron
 Reconstruction**
 
@@ -32,6 +44,8 @@ Official code repository for the BIBM 2024 paper:
 | `requirements-train.txt` | Python dependencies for SAEM²/SAvEM³ training |
 | `requirements-post.txt` | Python dependencies for waterz / elf / ERL postprocessing |
 | `data/` | Optional local data directory (not committed) |
+| `docs/` | Reproduction contracts, validation records, and experiment limits |
+| `tests/` | Scientific invariant, training, graph-cut and Probe-EM regression tests |
 
 ## Installation
 
@@ -71,6 +85,7 @@ python scripts/run_probe_em.py --config configs/config.json
 ```
 
 The postprocessing environment installs:
+
 - [funkey/waterz](https://github.com/funkey/waterz)
 - [constantinpape/elf](https://github.com/constantinpape/elf) 0.5.0
 - conda-forge `nifty`, `vigra`, `affogato`, `libboost-headers`, `libboost-devel`

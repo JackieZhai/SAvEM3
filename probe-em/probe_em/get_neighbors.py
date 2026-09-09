@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 import math
 from numba import jit
 from numba.typed import Dict
@@ -88,7 +88,9 @@ def traverse_local_block_xyz(segmentation, center_local, vector, resolution, tar
                     is_touching = True
 
                 
-                if is_touching:
+                # HSS must also propose spatially close fragments across a gap;
+                # restricting candidates to touching labels prevents ASP recovery.
+                if is_touching or dist <= max_dist_nm:
                     if neighbor_label not in stats:
                         # [SumX, SumY, SumZ, Count]
                         stats[neighbor_label] = np.zeros(4, dtype=np.float64)
@@ -117,8 +119,10 @@ def process_single_endpoint_xyz(vol, endpoint_vox_xyz, vector_xyz, target_id, en
 
     
     vol_size = vol.bounds.maxpt  
-    start = np.maximum(center - padding_vox, 0)
+    start = np.maximum(center - padding_vox, vol.bounds.minpt)
     end = np.minimum(center + padding_vox + 1, vol_size)
+    if np.any(end <= start):
+        return []
 
     try:
         
@@ -129,7 +133,7 @@ def process_single_endpoint_xyz(vol, endpoint_vox_xyz, vector_xyz, target_id, en
         
         
         # cutout = np.array(cutout).squeeze()
-        cutout = np.array(cutout).squeeze()
+        cutout = np.asarray(cutout)[..., 0]
 
         if cutout.ndim != 3:
             return []
@@ -143,7 +147,7 @@ def process_single_endpoint_xyz(vol, endpoint_vox_xyz, vector_xyz, target_id, en
             center_local,  # (cx, cy, cz)
             vector_xyz,  # (vx, vy, vz)
             res_xyz,  # (rx, ry, rz)
-            target_id,
+            np.uint64(target_id),
             search_dist_nm
         )
 
@@ -174,8 +178,7 @@ def process_single_endpoint_xyz(vol, endpoint_vox_xyz, vector_xyz, target_id, en
         return results
 
     except Exception as e:
-        print(f"Error processing endpoint {endpoint_vox_xyz}: {e}")
-        return []
+        raise RuntimeError(f'Endpoint read/search failed at {endpoint_vox_xyz}: {e}') from e
 
 
 def save_connections_to_csv(connections, filename):
@@ -238,22 +241,34 @@ def evaluate_performance(ans_list, connections):
 # ==========================================
 
 # ==========================================
-def find_neighbors(cloud_path, target_id, endpoints_xyz, vectors_xyz, skel_resolution_xyz, max_workers=8):
+def find_neighbors(cloud_path, target_id, endpoints_xyz, vectors_xyz, skel_resolution_xyz,
+                   max_workers=8, z_field=None):
+    """Find geometric neighbors near the skeleton endpoints.
 
-    
+    If ``z_field`` (a probe_em.z_align.ZAffineField) is given, the endpoints
+    are mapped into the aligned space and cutouts are read through the aligned
+    volume; the returned contact points are therefore in ALIGNED mip0
+    coordinates (map back with ``z_field.inverse_pts`` before saving).
+    """
+
     if not any(cloud_path.startswith(p) for p in ['file://', 'precomputed://', 'gs://', 'https://']):
         path = 'file://' + cloud_path
     else:
         path = cloud_path
-    
-    vol = CloudVolume(path, mip=0, parallel=False, fill_missing=True)
+
+    vol = CloudVolume(path, mip=0, parallel=False, fill_missing=False)
+    if z_field is not None:
+        from probe_em.z_align import AlignedVolume
+        vol = AlignedVolume(vol, z_field)
 
     res0_xyz = np.array(vol.resolution)
 
-    
     # Scale Factor = High_Res / Low_Res
     scale_factor = np.array(skel_resolution_xyz) / res0_xyz
     endpoints_mip0 = endpoints_xyz * scale_factor
+
+    if z_field is not None:
+        endpoints_mip0 = z_field.forward_pts(endpoints_mip0)
 
     all_connections = []
 
@@ -280,8 +295,9 @@ def find_neighbors(cloud_path, target_id, endpoints_xyz, vectors_xyz, skel_resol
     return all_connections
 
 
-def get_neighbors(seg_path, target_id, endpoints_list, vectors_list, ske_resolution):
-    connection = find_neighbors(seg_path, target_id, endpoints_list, vectors_list, ske_resolution)
+def get_neighbors(seg_path, target_id, endpoints_list, vectors_list, ske_resolution, z_field=None):
+    connection = find_neighbors(seg_path, target_id, endpoints_list, vectors_list,
+                                ske_resolution, z_field=z_field)
     return connection
 
 

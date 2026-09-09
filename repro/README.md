@@ -2,6 +2,13 @@
 
 Executable reproduction scripts for SAEM²-SAEvM³.
 
+See the [reproduction guide](../docs/REPRODUCTION.md) for the recommended workflow and validated scope.
+Module guides: [data engine](data_engine/README.md), [SAEM² preparation](saem2/README.md),
+[three-target distillation](savem3/README.md), [prompt graph cut](graph_cut/README.md),
+[evaluation/ROI inference](evaluate/README.md), [environments](env/README.md), and [MPS compatibility](mps_adapt/README.md).
+The typical order below preserves the historical workflow; new three-target distillation uses
+`savem3/export_teacher.py` and `savem3/distill.py`.
+
 ## Layout
 
 ```

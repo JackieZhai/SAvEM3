@@ -3,6 +3,14 @@
 SAEM² auxiliary pretraining for EM neuron segmentation. This directory contains the
 training, data-preparation, and evaluation scripts described in the SAvEM³ paper.
 
+See the [reproduction contract](../docs/REPRODUCTION.md). `modeling.py` extracts the shared
+`MaskDecoderHQ` (HQ + membrane token) from the trainer while retaining parameter names compatible
+with historical `epoch_N.pth` checkpoints. Teacher export strictly loads the trained membrane head;
+a standard HQ-SAM checkpoint cannot replace SAEM² membrane weights.
+`repro/saem2/run_train.sh` selects the paper's 12 epochs; direct invocation still defaults to 16
+and requires an explicit override. Membrane TIFFs and embeddings must use the same `--xy-nm`
+and center-cropped 1024² field of view.
+
 ## Files
 
 - `trainMemProISBI_2d_v4.py`: main EM training with HQ-SAM encoders and an extra

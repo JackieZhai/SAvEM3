@@ -1,5 +1,5 @@
 cloud-volume==12.8.0
-kimimaro==5.8.0
+kimimaro==5.8.4
 matplotlib
 networkx
 neuroglancer==2.41.2

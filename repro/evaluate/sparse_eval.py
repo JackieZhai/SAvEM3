@@ -1,95 +1,99 @@
-"""M6 · 大体积稀疏评测：oracle RoI + 分块推理 + 重叠拼接（论文 §3 Sparse Evaluation 原话：
+"""Run actual SAvEM3 inference for explicit ROI chunks, then stitch probabilities.
 
-"According to the scope around the mesh of neurons, the model only runs in chunks
- (512x512x64 voxels) within the passing scope, and the results merge into
- complete neurons through the vanilla overlap-based stitching."
-"H01: 512x512x64 in 8x8x33nm; MICrONS Pinky: 512x512x64 in 8x8x40nm"
-
-本脚本编排"蒸馏模型在指定 RoI 上的分块推理 + 重叠拼接"：
-1. 读 RoI 清单（JSON：每个 chunk 的体数据偏移与尺寸；由目标神经元的 mesh/骨架范围生成）；
-2. 对每个 chunk 调 scripts_savem3 的推理（test_devoem_sparse_membrane_triplet_2.py 或
-   滑窗 Provider）得到膜概率块；
-3. 相邻块在重叠区取平均（vanilla overlap stitching）拼成整块膜图；
-4. 整块膜图 → distill_postprocess.py 的过分割+聚合 → 提取目标神经元段。
-
-用法：
-    python sparse_eval.py --roi roi_chunks.json --ckpt models/xxx/model-200000.ckpt \
-        --cfg mem3c2c_3ds_t3t --out-dir ./sparse_out
-roi_chunks.json 格式：{"chunks": [{"offset": [z,y,x], "size": [64,512,512]}, ...],
-                       "neuron_id": 2252715458}
+ROI JSON: {"chunks": [{"offset": [z,y,x], "size": [64,512,512]}, ...]}.
+Offsets index the supplied raw volume. Output coordinates are stored separately;
+uncovered voxels have boundary probability 1 and coverage 0, never neuron interior.
 """
 import argparse
 import json
-import os
-import subprocess
+from pathlib import Path
 import sys
 
 import numpy as np
 
-
-def load_h5(path):
-    import h5py
-    with h5py.File(path, 'r') as f:
-        return f['main'][:]
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from repro.volume import load_volume, save_volume
 
 
-def stitch(chunks, offsets, overlap=16):
-    """重叠区取平均的 vanilla overlap-based stitching。
-
-    chunks: list of (Z,H,W) 膜概率块；offsets: 对应 [z,y,x] 全局偏移（含重叠步进）。
-    """
-    from tqdm import tqdm
-    shapes = np.array([c.shape for c in chunks])
-    z_max = max(o[0] + s[0] for o, s in zip(offsets, shapes))
-    y_max = max(o[1] + s[1] for o, s in zip(offsets, shapes))
-    x_max = max(o[2] + s[2] for o, s in zip(offsets, shapes))
-    acc = np.zeros((z_max, y_max, x_max), dtype=np.float64)
-    cnt = np.zeros_like(acc)
-    for c, o in tqdm(zip(chunks, offsets), desc='stitch'):
-        zs, ys, xs = o
-        zh, yh, xh = c.shape
-        acc[zs:zs + zh, ys:ys + yh, xs:xs + xh] += c.astype(np.float64)
-        cnt[zs:zs + zh, ys:ys + yh, xs:xs + xh] += 1
-    cnt[cnt == 0] = 1
-    return (acc / cnt).astype(np.float32)
+def stitch(chunks, offsets, overlap=16, return_metadata=False, max_voxels=128_000_000):
+    if not chunks or len(chunks) != len(offsets):
+        raise ValueError('Expected equal nonempty chunks and offsets')
+    offsets = np.asarray(offsets, dtype=np.int64)
+    if offsets.shape != (len(chunks), 3) or any(chunk.ndim != 3 for chunk in chunks):
+        raise ValueError('Chunks and offsets must be ZYX')
+    origin = offsets.min(axis=0)
+    relative = offsets-origin
+    shape = np.max(relative + np.array([chunk.shape for chunk in chunks]), axis=0)
+    if int(np.prod(shape)) > max_voxels:
+        raise ValueError('ROI bounding box exceeds the memory limit; partition the ROI')
+    total = np.zeros(tuple(shape), np.float32)
+    coverage = np.zeros(tuple(shape), np.uint32)
+    for chunk, offset in zip(chunks, relative):
+        if not np.isfinite(chunk).all() or np.any(chunk < 0) or np.any(chunk > 1):
+            raise ValueError('Chunks must contain boundary probabilities in [0,1]')
+        region = tuple(slice(int(start), int(start+size)) for start, size in zip(offset, chunk.shape))
+        total[region] += chunk
+        coverage[region] += 1
+    output = np.divide(total, coverage, out=np.ones_like(total), where=coverage > 0)
+    return (output, coverage, origin) if return_metadata else output
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--roi', required=True, help='chunk 清单 JSON')
-    ap.add_argument('--ckpt', required=True, help='蒸馏模型 ckpt 路径')
-    ap.add_argument('--cfg', default='mem3c2c_3ds_t3t')
-    ap.add_argument('--scripts', default=None,
-                    help='蒸馏训练脚本目录（默认 $SAVEM3_DATA_ROOT/savem3）')
-    ap.add_argument('--out-dir', default='./sparse_out')
-    ap.add_argument('--overlap', type=int, default=16)
-    ap.add_argument('--data-root', default=None, help='体数据根（CloudVolume file:// 前缀父目录）')
-    args = ap.parse_args()
-    os.makedirs(args.out_dir, exist_ok=True)
-
-    with open(args.roi) as f:
-        roi = json.load(f)
-    neuron_id = roi.get('neuron_id')
-
-    data_root = args.data_root or os.environ.get('SAVEM3_DATA_ROOT', os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')))
-    scripts = args.scripts or os.path.join(data_root, 'savem3')
-
-    chunk_files = []
-    for i, ch in enumerate(roi['chunks']):
-        out_h5 = os.path.join(args.out_dir, f'chunk_{i:04d}.h5')
-        # 分块推理：这里以子进程调用蒸馏推理入口；具体推理脚本按 scripts_savem3 的
-        # test_devoem_sparse_membrane_triplet_2.py 的实际参数调整
-        cmd = [sys.executable, os.path.join(scripts, 'test_devoem_sparse_membrane_triplet_2.py'),
-               '-c', args.cfg, '--ckpt', args.ckpt,
-               '--offset', ','.join(map(str, ch['offset'])),
-               '--size', ','.join(map(str, ch['size'])),
-               '--out', out_h5]
-        print(' '.join(cmd))
-        # subprocess.check_call(cmd)  # 在 GPU 服务器上取消注释
-        chunk_files.append(out_h5)
-
-    print(f'共 {len(chunk_files)} 块；请在 GPU 服务器上执行分块推理后再次运行 --stitch-only 模式')
-    print('拼接逻辑：chunks 按 roi 清单 offsets 重叠 --overlap 体素取平均。')
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--roi', required=True)
+    parser.add_argument('--raw', help='uint8 raw H5/TIFF/NPY at student resolution')
+    parser.add_argument('--raw-key', default='main')
+    parser.add_argument('--ckpt')
+    parser.add_argument('--out-dir', default='./sparse_out')
+    parser.add_argument('--stitch-only', action='store_true')
+    parser.add_argument('--device', default='auto')
+    parser.add_argument('--patch', nargs=3, type=int, default=[18, 160, 160])
+    parser.add_argument('--overlap', nargs=3, type=int, default=[4, 32, 32])
+    parser.add_argument('--max-voxels', type=int, default=128_000_000)
+    args = parser.parse_args()
+    roi = json.loads(Path(args.roi).read_text())
+    if not roi.get('chunks'):
+        parser.error('ROI must contain at least one chunk')
+    output = Path(args.out_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    raw = model = device = None
+    if not args.stitch_only:
+        if not args.raw or not args.ckpt:
+            parser.error('Inference needs --raw and --ckpt; use --stitch-only for existing chunks')
+        import torch
+        from repro.savem3.distill import build_student, predict_volume
+        from repro.sam import resolve_device
+        raw = load_volume(args.raw, args.raw_key)
+        device = resolve_device(args.device)
+        model = build_student().to(device)
+        state = torch.load(args.ckpt, map_location='cpu', weights_only=False)
+        weights = state.get('model', state.get('model_weights', state))
+        model.load_state_dict({key.removeprefix('module.'): value for key, value in weights.items()}, strict=True)
+    chunks, offsets = [], []
+    for index, entry in enumerate(roi['chunks']):
+        offset, size = entry['offset'], entry['size']
+        if len(offset) != 3 or len(size) != 3 or any(int(value) != value for value in offset+size) or min(size) <= 0:
+            raise ValueError('Each chunk needs integer ZYX offset and positive size')
+        path = output / f'chunk_{index:04d}.h5'
+        if args.stitch_only:
+            chunk = load_volume(path)
+        else:
+            if min(offset) < 0 or any(start+extent > bound for start, extent, bound in zip(offset, size, raw.shape)):
+                raise ValueError(f'Chunk {index} falls outside raw volume')
+            region = tuple(slice(start, start+extent) for start, extent in zip(offset, size))
+            chunk = predict_volume(model, raw[region], args.patch, args.overlap, device)
+            save_volume(path, chunk, offset_zyx=offset, checkpoint=str(Path(args.ckpt).resolve()))
+        if tuple(chunk.shape) != tuple(size):
+            raise ValueError(f'Chunk {index} shape differs from ROI manifest')
+        chunks.append(chunk)
+        offsets.append(offset)
+    stitched, coverage, origin = stitch(chunks, offsets, return_metadata=True, max_voxels=args.max_voxels)
+    save_volume(output / 'boundary.h5', stitched, offset_zyx=origin)
+    save_volume(output / 'coverage.h5', coverage, offset_zyx=origin)
+    report = {'offset_zyx': origin.tolist(), 'shape_zyx': list(stitched.shape),
+              'covered_voxels': int(np.count_nonzero(coverage)), 'chunks': len(chunks)}
+    (output / 'report.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+    print(json.dumps(report, indent=2))
 
 
 if __name__ == '__main__':

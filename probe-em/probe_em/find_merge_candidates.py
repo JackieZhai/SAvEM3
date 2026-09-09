@@ -15,7 +15,7 @@ import pandas as pd
 from tqdm import tqdm
 import shutil
 
-from probe_em.device import resolve_device, autocast_dtype, sam2_config_name
+from probe_em.device import resolve_device, inference_autocast, sam2_config_name
 
 # ==========================================
 
@@ -214,12 +214,14 @@ def process_pair(predictor, raw_path, mask_path, overlay_path, output_dir,
         id2 = "Unknown"
 
     if not os.path.exists(raw_path) or not os.path.exists(mask_path):
-        return None
+        raise FileNotFoundError(f'Incomplete PEC case: {raw_path}, {mask_path}')
 
     
     image_bgr = cv2.imread(raw_path)
     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
     mask_img = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+    if mask_img is None or mask_img.shape != image_rgb.shape[:2]:
+        raise ValueError(f'Invalid PEC label mask: {mask_path}')
 
     mask1 = (mask_img == 1)
     mask2 = (mask_img == 2)
@@ -402,24 +404,28 @@ def process_pair(predictor, raw_path, mask_path, overlay_path, output_dir,
 
 
 def find_merge_candidates(checkpoint, model_cfg, input_dir, output_dir, save_temp=False, device=None,
-                          max_score_threshold=0.5, min_score_threshold=0.1):
+                          max_score_threshold=0.5, min_score_threshold=0.1, predictor=None,
+                          strict=True):
     os.makedirs(output_dir, exist_ok=True)
 
+    raw_files = sorted(glob.glob(os.path.join(input_dir, "*_raw.jpg")))
+    if not raw_files:
+        return []
     device = resolve_device(device)
-    print(f"Loading SAM 2 image predictor on {device} ...")
-    sam2_model = build_sam2(sam2_config_name(model_cfg), checkpoint, device=device)
-    predictor = SAM2ImagePredictor(sam2_model)
+    if predictor is None:
+        print(f"Loading SAM 2 image predictor on {device} ...")
+        sam2_model = build_sam2(sam2_config_name(model_cfg), checkpoint, device=device)
+        predictor = SAM2ImagePredictor(sam2_model)
+    elif callable(predictor):
+        predictor = predictor()
 
     
-    raw_files = glob.glob(os.path.join(input_dir, "*_raw.jpg"))
 
     
     connected_neighbors = set()
 
     
-    dtype = autocast_dtype(device)
-
-    with torch.inference_mode(), torch.autocast(device, dtype=dtype):
+    with torch.inference_mode(), inference_autocast(device):
         for raw_path in tqdm(raw_files, desc="SAM2 Inference"):
             mask_path = raw_path.replace("_raw.jpg", "_mask.png")
             overlay_path = raw_path.replace("_raw.jpg", "_overlay.jpg")
@@ -438,6 +444,8 @@ def find_merge_candidates(checkpoint, model_cfg, input_dir, output_dir, save_tem
             except Exception as e:
                 
                 print(f"[Warning] Error processing {os.path.basename(raw_path)}: {e}")
+                if strict:
+                    raise
 
     if os.path.exists(input_dir) and (save_temp == 0):
         shutil.rmtree(input_dir)
@@ -464,12 +472,13 @@ if __name__ == "__main__":
 
     results_list = []
 
-    with torch.inference_mode(), torch.autocast(device, dtype=torch.bfloat16):
+    with torch.inference_mode(), inference_autocast(device):
         for raw_path in tqdm(raw_files):
             mask_path = raw_path.replace("_raw.jpg", "_mask.png")
             overlay_path = raw_path.replace("_raw.jpg", "_overlay.jpg")
             try:
-                res = process_pair(predictor, raw_path, mask_path, overlay_path, output_dir, num_trials=3)
+                res = process_pair(predictor, raw_path, mask_path, overlay_path, output_dir,
+                                   total_trials=5, min_pass_trials=4)
                 if res:
                     results_list.append(res)
             except Exception as e:
@@ -479,7 +488,7 @@ if __name__ == "__main__":
         df = pd.DataFrame(results_list)
 
         
-        cols = ["target_id", "neighbor_id", "vote_count", "avg_score", "is_connected", "vis_path"]
+        cols = ["target_id", "neighbor_id", "avg_score", "is_connected"]
         df = df[cols]  
 
         df.to_csv(csv_output_path, index=False)

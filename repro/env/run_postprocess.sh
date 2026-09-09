@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
-# 用 savem3-post conda 环境运行 waterz/elf/官方 ERL 相关脚本。
-# 用法：
+# Run WaterZ/ELF/official ERL scripts in the savem3-post conda environment.
+# Usage:
 #   ./run_postprocess.sh path/to/script.py [args...]
-#   ./run_postprocess.sh -m python -c 'import waterz; print(waterz.__file__)'
+#   ./run_postprocess.sh -c 'import waterz; print(waterz.__file__)'
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-POST="$ROOT/.conda-envs/savem3-post"
-SDKROOT="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk}"
+POST="${SAVEM3_POST_ENV:-$ROOT/.conda-envs/savem3-post}"
+if [ ! -x "$POST/bin/python" ] && [ -x "$ROOT/../.conda-envs/savem3-post/bin/python" ]; then
+    POST="$ROOT/../.conda-envs/savem3-post"
+fi
 
 if [ ! -x "$POST/bin/python" ]; then
-    echo "未找到 $POST；请先运行 ./setup_postprocess.sh" >&2
+    echo "Cannot find $POST; run ./repro/env/setup_postprocess.sh first" >&2
     exit 1
 fi
 
-export SDKROOT
-export CXXFLAGS="-isysroot $SDKROOT -isystem $SDKROOT/usr/include/c++/v1 -I$POST/include"
-export LDFLAGS="-L$POST/lib -lc++"
+if [[ "${OSTYPE:-}" == darwin* ]]; then
+    export SDKROOT="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk}"
+    export CXXFLAGS="${CXXFLAGS:-} -isysroot $SDKROOT -isystem $SDKROOT/usr/include/c++/v1 -I$POST/include"
+    export LDFLAGS="${LDFLAGS:-} -L$POST/lib -lc++"
+fi
 export WITTY_CACHE_DIR="$ROOT/.cache/witty"
 export MPLCONFIGDIR="$ROOT/.cache/matplotlib"
 mkdir -p "$WITTY_CACHE_DIR" "$MPLCONFIGDIR"

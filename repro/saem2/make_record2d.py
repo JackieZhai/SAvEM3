@@ -1,29 +1,29 @@
-"""M2 准备 · 把数据银行的 CloudVolume 图层导出为 SAEM² 所需的 2D 逐层 tif。
+"""M2 preparation: export data-bank CloudVolume layers as SAEM² section TIFFs.
 
-dataloader 约定（saem2/utils/dataloader_isbi_2d_v4.py）：
-    prepared_segments_mul_mem/{ds}/%05d.tif    膜图（img>0 为膜）
-    prepared_segments_mul_2d/{ds}/%05d.tif    实例标签（json2d_create.py 由膜图 mem2label 生成）
-    prepared_embedding/{ds}/embed/%05d.tif    预计算 SAM 嵌入（savem3/precompute_teacher.py 生成）
+Dataloader contract (saem2/utils/dataloader_isbi_2d_v4.py):
+    prepared_segments_mul_mem/{ds}/%05d.tif    Membrane maps (img > 0 means membrane)
+    prepared_segments_mul_2d/{ds}/%05d.tif    Instance labels (mem2label in json2d_create.py)
+    prepared_embedding/{ds}/embed/%05d.tif    SAM embeddings (savem3/precompute_teacher.py)
     record2d_train.json                        {dataset: {layer: [label_id...]}}
 
-本脚本负责第一步：从 location.py 的 mem 图层（若无则用 seg 图层按 seg2mem 逻辑
-fastmorph.erode 后取 ==0 现场生成膜图）导出逐层 mem tif。
-之后依次运行：python json2d_create.py → savem3/precompute_teacher.py --write-tif。
+This script exports membrane TIFFs from the mem layer in location.py. If absent,
+derive membranes from seg using fastmorph.erode followed by == 0, as in seg2mem.
+Then run json2d_create.py followed by savem3/precompute_teacher.py --write-tif.
 
-数据集名映射（location.py 名 → SALEM2 名）：
+Dataset-name mapping (location.py -> historical SALEM2 records):
     snemi→SNEMI, ac3→AC3, cremi_a→cremiA, cremi_b→cremiB, cremi_c→cremiC,
-    fib25→FIB25, hemibrain_*→HB-<区名>, axonem-h_<x>-<y>-<z>→AxonEM-H/seg_<x>-<y>-<z>,
-    axonem-m_*→AxonEM-M/seg_*, j0126_*→J0126/<块名>, segem_*→SegEM/<块名>
+    fib25→FIB25, hemibrain_*→HB-<region>, axonem-h_<x>-<y>-<z>→AxonEM-H/seg_<x>-<y>-<z>,
+    axonem-m_*→AxonEM-M/seg_*, j0126_*→J0126/<block>, segem_*→SegEM/<block>
 
-用法：
-    python make_record2d.py --datasets snemi,ac3 --out-root $SAVEM3_DATA_ROOT --mode mem
+Usage:
+    python make_record2d.py --datasets snemi,ac3 --out-root $SAVEM3_DATA_ROOT
 """
 import argparse
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data_engine'))
-from common import DATA_ROOT, ranges_of, cv_path, open_cv  # noqa: E402
+from common import DATA_ROOT, ranges_of, cv_path, open_cv, encoder_plane  # noqa: E402
 
 from skimage import io  # noqa: E402
 import numpy as np  # noqa: E402
@@ -31,7 +31,7 @@ from tqdm import tqdm  # noqa: E402
 
 
 def salem2_name(dataset):
-    """location.py 数据集名 → SALEM2 记录名。"""
+    """Map a location.py dataset name to a historical SALEM2 record name."""
     if dataset == 'snemi':
         return 'SNEMI'
     if dataset == 'ac3':
@@ -53,8 +53,8 @@ def salem2_name(dataset):
     return dataset
 
 
-def export_mem_tifs(dataset, out_root):
-    """导出 mem 层逐片 tif；无 mem 层时按 seg2mem 逻辑现场生成膜图。"""
+def export_mem_tifs(dataset, out_root, xy_nm=4.0):
+    """Export membrane TIFFs; derive missing membranes from seg using seg2mem conventions."""
     ds_name = salem2_name(dataset)
     out_dir = os.path.join(out_root, 'prepared_segments_mul_mem', ds_name)
     os.makedirs(out_dir, exist_ok=True)
@@ -62,7 +62,7 @@ def export_mem_tifs(dataset, out_root):
     mem_vol = open_cv(dataset, 'mem')
     seg_vol = open_cv(dataset, 'seg')
     if mem_vol is None and seg_vol is None:
-        print(f'[{dataset}] 无 mem/seg 图层，跳过')
+        print(f'[{dataset}] No mem/seg layer; skipping')
         return
     (xs, ys, zs), (xe, ye, ze) = ranges_of(dataset)[0]
 
@@ -75,20 +75,23 @@ def export_mem_tifs(dataset, out_root):
             mem = ((seg == 0).astype(np.uint8)) * 255
         else:
             mem = (mem_vol[xs:xe, ys:ye, z][..., 0] > 0).astype(np.uint8) * 255
+        resolution = (seg_vol if need_erode else mem_vol).resolution
+        mem = encoder_plane(mem, resolution, xy_nm, labels=True).astype(np.uint8)
         io.imsave(os.path.join(out_dir, '%05d.tif' % (z - zs)), mem)
-    print(f'[{dataset}] -> {out_dir}（{ze - zs} 片）')
+    print(f'[{dataset}] -> {out_dir} ({ze - zs} sections)')
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--datasets', type=str, default='snemi,ac3')
     ap.add_argument('--out-root', type=str, default=None,
-                    help='默认 $SAVEM3_DATA_ROOT（即 prepared_segments_mul_mem 的父目录）')
+                    help='Default: $SAVEM3_DATA_ROOT (parent of prepared_segments_mul_mem)')
+    ap.add_argument('--xy-nm', type=float, default=4.0, help='Must match precompute_teacher.py --xy-nm')
     args = ap.parse_args()
     out_root = args.out_root or DATA_ROOT
     for name in [d for d in args.datasets.split(',') if d]:
         print(f'== {name} ==')
-        export_mem_tifs(name, out_root)
+        export_mem_tifs(name, out_root, args.xy_nm)
 
 
 if __name__ == '__main__':

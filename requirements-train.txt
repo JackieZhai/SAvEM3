@@ -1,13 +1,14 @@
-# SAvEM3 / SAEM² 训练环境（Python 3.9）
-# 说明：
-#   1. 先按平台安装 PyTorch：
+# SAvEM3 / SAEM² training environment (Python 3.9)
+# Installation notes:
+#   1. Install PyTorch for your platform first:
 #      - Apple Silicon: pip install torch torchvision
-#      - Linux CUDA:    按 https://pytorch.org 选择 CUDA 版本
-#   2. 再安装本文件其余依赖。
-#   3. waterz/elf 属于训练中验证与后处理依赖，不在本文件；见 repro/env/。
+#      - Linux CUDA:    Select the CUDA build at https://pytorch.org
+#   2. Then install the remaining dependencies from this file.
+#   3. WaterZ/ELF are validation/postprocessing dependencies; install separately via repro/env/.
 
 torch>=2.1
 torchvision>=0.16
+timm>=0.9
 numpy>=1.26,<2.1
 scipy>=1.10
 scikit-image>=0.22

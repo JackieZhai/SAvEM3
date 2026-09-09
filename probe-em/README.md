@@ -1,6 +1,13 @@
 # Probe-EM
 
-[English](README.md) | [中文](README_zh.md)
+The local [Neuroglancer demo](scripts/README.md) enables local slice registration by default.
+Press `A` to compare registered/original data; use `--no-align-z` to disable registration.
+
+Integration guides: [Neuroglancer demo / SAvEM³ export](scripts/README.md),
+[core modules and resume behavior](probe_em/README.md), and [configuration fields](configs/README.md).
+The generic demo preserves original uint64 segment IDs, physical resolution, and voxel offsets.
+It supports input/trace comparison and versioned manual-review sets. Viewers default to
+`"showSlices": false`; the three 2D panels remain visible.
 
 [![arXiv](https://img.shields.io/badge/arXiv-2607.04696-b31b1b.svg)](https://arxiv.org/abs/2607.04696)
 
@@ -173,6 +180,7 @@ python scripts/run_probe_em.py --config configs/config.json
 ```
 
 Notes:
+
 - `probe_em/device.py` handles CUDA/MPS/CPU selection.
 - `probe_em/mps_patch.py` patches SAM 2 rotary-position encoding for MPS.
 - The 2D SAM 2 image-verification path and the 3D video-propagation path were

@@ -1,6 +1,6 @@
 DATA:
   data_folder: ../data
-  dataset_name: ac4-triplet
+  dataset_name: ac4-triplet-flow
   if_artifact_aug: false
   if_blur_aug: true
   if_blurenhanced_aug: false
@@ -87,13 +87,13 @@ TRAIN:
   loss_lambda_embed: 1.0
   loss_lambda_feat: 1.0
   loss_lambda_func: L1Loss
-  loss_motion_embed: 1.0
-  loss_motion_feat: 1.0
+  loss_motion_embed: 0.0
+  loss_motion_feat: 0.05
   loss_motion_func: MotionLoss2
   loss_motion_interp: 2
   loss_motion_iter: 20000
-  loss_smooth_embed: 0.1
-  loss_smooth_feat: 0.1
+  loss_smooth_embed: 0.0
+  loss_smooth_feat: 0.05
   loss_smooth_func: WeightedSmoothLoss
   loss_smooth_interp: 2
   loss_smooth_iter: 20000

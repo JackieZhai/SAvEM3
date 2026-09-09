@@ -195,3 +195,8 @@ trace_results/
 checkpoints_finetuned/
 temp_slices_*/
 temp_vis_*/
+
+# Machine-specific audit artifacts and local-only language backups
+docs/workspace_inventory.json
+local_backups/
+.venvs/

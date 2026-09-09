@@ -1,4 +1,5 @@
-"""M1 数据引擎 · 模型在环统一（论文 Data unification 原话：
+"""M1 data engine: model-in-the-loop label unification.
+The paper describes iterative model refinement and boundary-only updates:
 
 "We iteratively train our model and save the high-confidential masks. We also
  used the mask prompting of finetuned HQ-SAM and SAEM² and the alternative NMS
@@ -6,17 +7,18 @@
  before and after higher than 0.7, which means we optimized the original
  boundary only. This cycle was repeated several times."
 
-本脚本实现"统一"的掩码更新半边（模型训练半边在外部循环：训练 SAEM²/HQ-SAM →
-调用 sam_refine.py 或 SAEM² 推理产出精修掩码 → 用本脚本合并回数据银行）：
+This script implements mask updates; model training remains an external loop:
+train SAEM²/HQ-SAM, refine with sam_refine.py or SAEM², then update the data bank.
 
-1. --pred-layer 读模型精修掩码层（seg_refine 或 SAEM² 输出的连通域实例层）；
-2. 与 --seg-layer 原标签逐片对齐：逐标签求 IoU；
-3. IoU > 0.7（--iou-threshold）：用精修掩码替换原标签边界（只优化边界）；
-   IoU <= 0.7：保留原标签；
-4. NMS 去重：精修掩码相互 IoU 过高的保留大者（--nms-iou）；
-5. 写出 --out-layer（seg_unified），完成一轮；论文做两轮（--round 记入日志）。
+1. Read --pred-layer (seg_refine or connected-component SAEM² predictions).
+2. Match predictions to --seg-layer section by section using per-label IoU.
+3. Replace boundaries only for IoU > 0.7 (--iou-threshold);
+   retain original labels otherwise.
+4. Retain larger masks when prediction IoU exceeds --nms-iou. Note that
+   distinct masks in a discrete label map do not overlap; this is not proposal NMS.
+5. Write --out-layer (seg_unified) for one round; log the round with --round.
 
-用法：
+Usage:
     python unify_iter.py --datasets snemi --seg-layer segb --pred-layer seg_refine \
         --out-layer seg_unified --round 1
 """
@@ -36,12 +38,12 @@ def iou(a, b):
 
 
 def unify_slice(seg_orig, seg_pred, iou_threshold=0.7, nms_iou=0.9):
-    """一片的统一：pred 中与 orig 各标签 IoU>thr 的替换之；pred 内部 NMS 去重。"""
+    """Update one section with predictions matching original labels above the IoU threshold."""
     out = seg_orig.copy()
     pred_labels = np.unique(seg_pred)
     pred_labels = pred_labels[pred_labels != 0]
 
-    # pred 内部 NMS：按面积降序，与已保留掩码 IoU 过高则丢弃
+    # Sort predictions by area and discard masks overlapping retained predictions.
     kept_preds = []
     areas = [(l, int((seg_pred == l).sum())) for l in pred_labels]
     areas.sort(key=lambda t: -t[1])
@@ -51,20 +53,23 @@ def unify_slice(seg_orig, seg_pred, iou_threshold=0.7, nms_iou=0.9):
             continue
         kept_preds.append(m)
 
-    # 与 orig 逐标签对齐
+    # Match each prediction to an original label.
     orig_labels = np.unique(seg_orig)
     orig_labels = orig_labels[orig_labels != 0]
     assigned = np.zeros_like(seg_orig, dtype=bool)
     for m in kept_preds:
         if assigned[m].sum() / max(m.sum(), 1) > 0.5:
-            continue  # 该区域已被处理
+            continue  # This region has already been assigned.
         best_iou, best_lab = 0.0, 0
         for ol in orig_labels:
             v = iou(m, seg_orig == ol)
             if v > best_iou:
                 best_iou, best_lab = v, ol
         if best_iou > iou_threshold and best_lab != 0:
-            out[m] = best_lab      # 用精修边界替换原标签
+            # Replacing a mask must remove its old boundary as well as grow it.
+            out[(seg_orig == best_lab) & ~assigned] = 0
+            m = m & (~assigned) & ((seg_orig == best_lab) | (seg_orig == 0))
+            out[m] = best_lab      # Replace the original boundary with the refined mask.
             assigned |= m
     return out
 
@@ -73,10 +78,10 @@ def process(dataset, seg_layer, pred_layer, out_layer, iou_threshold, nms_iou, r
     seg_vol = open_cv(dataset, seg_layer)
     pred_vol = open_cv(dataset, pred_layer)
     if seg_vol is None or pred_vol is None:
-        print(f'[{dataset}] 缺图层（{seg_layer}/{pred_layer}），跳过')
+        print(f'[{dataset}] Missing layer ({seg_layer}/{pred_layer}); skipping')
         return
     (xs, ys, zs), (xe, ye, ze) = ranges_of(dataset)[0]
-    dst = CloudVolume('file://' + cv_path(dataset, seg_layer).replace(seg_layer, out_layer),
+    dst = CloudVolume('file://' + cv_path(dataset, out_layer),
                       info=seg_vol.info, non_aligned_writes=True, fill_missing=True)
     dst.commit_info()
 
@@ -85,16 +90,16 @@ def process(dataset, seg_layer, pred_layer, out_layer, iou_threshold, nms_iou, r
         pred = pred_vol[xs:xe, ys:ye, z][..., 0]
         out = unify_slice(seg, pred, iou_threshold, nms_iou)
         dst[xs:xe, ys:ye, z] = out.astype(seg.dtype)[..., None]
-    print(f'[{dataset}] round {round_no} 完成 -> {out_layer}')
+    print(f'[{dataset}] round {round_no} complete -> {out_layer}')
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--datasets', type=str, default='snemi')
-    ap.add_argument('--seg-layer', type=str, default='segb', help='当前标签层（原标签）')
-    ap.add_argument('--pred-layer', type=str, default='seg_refine', help='模型精修掩码层')
+    ap.add_argument('--seg-layer', type=str, default='segb', help='Current/original label layer')
+    ap.add_argument('--pred-layer', type=str, default='seg_refine', help='Model-refined mask layer')
     ap.add_argument('--out-layer', type=str, default='seg_unified')
-    ap.add_argument('--iou-threshold', type=float, default=0.7, help='论文 IoU>0.7 才改边界')
+    ap.add_argument('--iou-threshold', type=float, default=0.7, help='Update boundaries only above IoU 0.7 in the paper')
     ap.add_argument('--nms-iou', type=float, default=0.9)
     ap.add_argument('--round', type=int, default=1)
     args = ap.parse_args()

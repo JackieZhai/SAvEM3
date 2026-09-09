@@ -638,11 +638,11 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--cfg', type=str, default='mem3c2_3ds_t3', help='path to config file')
     parser.add_argument('-m', '--mode', type=str, default='train', help='path to config file')
     parser.add_argument('--no-valid', action='store_true',
-                        help='关闭训练中验证/waterz/LMC 后处理（无后处理依赖时使用）')
+                        help='Disable in-training validation/WaterZ/MC when postprocessing dependencies are absent')
     parser.add_argument('--fresh', action='store_true',
-                        help='忽略 config 的 resume/load_path，从头训练')
+                        help='Ignore config resume/load_path and train from scratch')
     parser.add_argument('--num-workers', type=int, default=-1,
-                        help='覆盖 TRAIN.num_workers（-1 表示使用 config）')
+                        help='Override TRAIN.num_workers (-1 keeps the config value)')
     args = parser.parse_args()
 
     cfg_file = args.cfg + '.yaml'
@@ -651,6 +651,8 @@ if __name__ == "__main__":
 
     with open('./config/' + cfg_file, 'r') as f:
         cfg = AttrDict(yaml.safe_load(f))
+    if cfg.MODEL.output_nc == 2:
+        raise ValueError('The historical BDY+DST placeholder has no implemented two-head loss; do not report it as a DST ablation')
 
     timeArray = time.localtime()
     time_stamp = time.strftime('%Y-%m-%d--%H-%M-%S', timeArray)

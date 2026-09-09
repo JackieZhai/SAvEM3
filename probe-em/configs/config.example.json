@@ -14,5 +14,12 @@
   "max_workers": 4,
   "slice_workers": 8,
   "seed_ids": [123456789],
-  "seed_list_file": null
+  "seed_list_file": null,
+  "align_z": false,
+  "align_z_margin_xy": 256,
+  "align_z_margin_z": 64,
+  "align_z_estimation_mip": 1,
+  "align_z_motion": "translation",
+  "align_z_field": null,
+  "align_z_max_z": 400
 }

@@ -85,7 +85,7 @@ TRAIN:
   loss_graph_func: null
   loss_graph_node: 0.1
   loss_lambda_embed: 1.0
-  loss_lambda_feat: 1.0
+  loss_lambda_feat: 0.0
   loss_lambda_func: L1Loss
   loss_motion_embed: 1.0
   loss_motion_feat: 1.0
