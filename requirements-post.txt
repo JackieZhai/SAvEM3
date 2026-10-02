@@ -1,9 +1,9 @@
-# SAvEM3 后处理 / 评测环境（Python 3.9）
-# 使用前先创建 conda 环境并安装 repro/env/environment-post.yml 中的
-# nifty / vigra / affogato / libboost 头文件。
-# 然后在 conda 环境中执行：
+# SAvEM3 Post-processing / Evaluation Environment (Python 3.9)
+# Before use, create a conda environment and install the
+# nifty / vigra / affogato / libboost headers specified in repro/env/environment-post.yml.
+# Then, execute the following within the conda environment:
 #   pip install -r requirements-post.txt
-# 或直接运行 repro/env/setup_postprocess.sh（Apple Silicon 会自动设置编译标志）。
+# Or simply run repro/env/setup_postprocess.sh (compilation flags are automatically set for Apple Silicon).
 
 h5py>=3.10
 imageio>=2.34
