@@ -1,4 +1,4 @@
-# SAvEM3 Post-processing / Evaluation Environment (Python 3.9)
+# SAvEM3 post-processing / evaluation environment (Python 3.9)
 # Before use, create a conda environment and install the
 # nifty / vigra / affogato / libboost headers specified in repro/env/environment-post.yml.
 # Then, execute the following within the conda environment:
