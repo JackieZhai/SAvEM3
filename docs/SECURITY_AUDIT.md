@@ -124,3 +124,15 @@ artifacts). See [the validation record](VALIDATION.md) for the interactive check
 
 Publication and the remote rescan have both been verified. A local edit or
 environment upgrade alone would not have closed the default-branch alerts.
+
+## Optional ONNX environment, 2026-11-04
+
+`probe-em/requirements-onnx.txt` adds ONNX 1.23.2 and ONNX Runtime 1.31.1 without
+replacing the secure Torch/Torchvision pair. A separate environment passed
+`pip check` and the 160-test regression suite (four native-package skips).
+Its initial audit identified an old pip; upgrading pip to 26.3 removed those
+findings. The completed advisory scan reported zero known vulnerabilities in
+167 installed distribution records. The editable local SAM-2 source was again
+unavailable to the advisory database and skipped. CPU/CoreML encoder execution,
+Torch/MPS decoding and actual video propagation were exercised; other provider
+packages were not installed or audited on this Mac.

@@ -4,6 +4,10 @@ The [interactive point-prompt mode](README_interactive.md) adds positive/negativ
 annotations, explicit SAM/HQ-SAM/SAM2/SAEM2 image inference, bounded SAM2 propagation,
 mask preview and local acceptance. I predicts the current slice; V propagates
 through the B/E range. Moving to another section retains earlier prompts.
+Use **D/F** for previous/next sections. The [test-window browser](README_windows.md)
+adds Previous/Next buttons and a selector while preserving per-window review state.
+See [SAM2 acceleration](README_acceleration.md) for the default feature cache,
+optional ONNX encoder, platform options and measured tradeoffs.
 
 For larger local datasets with neuron GT, see the [bounded evaluation guide](README_local_gt.md).
 It covers multiscale ROI selection, original/ECC/SOFIMA comparisons and synchronized

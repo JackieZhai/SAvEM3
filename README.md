@@ -13,6 +13,10 @@ upgrade, all eight advisory ranges and CPU/MPS validation.
 The [interactive Neuroglancer mode](probe-em/README_interactive.md) supports
 positive/negative points per section, explicit image inference, bounded SAM2
 propagation across sections and reviewed local mask outputs.
+The [test-window browser](probe-em/README_windows.md) adds Previous/Next buttons,
+a window selector and D/F slice movement while retaining each window's points.
+[SAM2 runtime options](probe-em/README_acceleration.md) include bounded feature
+caching and an optional ONNX encoder with the original decoder and video memory.
 An optional [SOFIMA backend](probe-em/README_sofima.md) adds bounded elastic local
 registration; ECC remains the default and saved dense fields work with interactive prompts.
 The [large local-volume guide](probe-em/README_local_gt.md) describes bounded

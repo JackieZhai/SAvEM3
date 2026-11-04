@@ -1,5 +1,11 @@
 # Probe-EM tracing and demonstration scripts
 
+`demo_windows.py` serves multiple cached ROIs with Previous/Next buttons, a selector
+and independent annotations/results. See the [window-browser guide](../README_windows.md).
+`export_sam2_onnx.py` exports and validates the optional SAM2 encoder;
+`benchmark_sam2_runtime.py` measures image/video latency and mask agreement on
+local inputs. See [runtime options and measurements](../README_acceleration.md).
+
 For the optional SAEM2 checkpoint experiment, see the
 [paired image and bounded 3D trial](../README_saem2_trial.md). It uses separate
 outputs and does not replace Probe-EM's SAM2 video backend.
@@ -15,7 +21,7 @@ the same registration field. Existing display-only demos remain available below.
 For point-based model interaction, use `demo.py --interactive` and see the
 [interactive guide](../README_interactive.md): P/N adds positive/negative points,
 I predicts the current section, B/E selects an inclusive z range, V runs SAM2
-propagation, X stops, and Y accepts a reviewed image or volume. J/K changes
+propagation, X stops, and Y accepts a reviewed image or volume. D/F changes
 sections while retaining each section's points. This mode can start without
 completed trace results and shares the registration and mesh settings below.
 

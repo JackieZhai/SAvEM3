@@ -344,6 +344,13 @@ def main():
     parser.add_argument('--prompt-config', default='sam2_hiera_t.yaml', help='Installed SAM 2 model config')
     parser.add_argument('--prompt-model-type', choices=['vit_b', 'vit_l', 'vit_h'], default='vit_b')
     parser.add_argument('--prompt-device', default='auto', help='auto, cpu, mps, cuda or cuda:N')
+    parser.add_argument('--sam2-runtime', choices=['torch', 'onnx'], default='torch',
+                        help='Image encoder runtime; decoder and temporal memory remain in PyTorch')
+    parser.add_argument('--sam2-onnx-dir', type=Path, help='Validated local export from export_sam2_onnx.py')
+    parser.add_argument('--onnx-provider', choices=['cpu', 'coreml', 'cuda', 'directml'], default='cpu')
+    parser.add_argument('--onnx-threads', type=int, default=0)
+    parser.add_argument('--feature-cache-mb', type=float, default=512,
+                        help='Bounded SAM2 image-feature cache on CPU; 0 disables it (default 512 MiB)')
     parser.add_argument('--propagate-radius', type=int, default=4,
                         help='Initial propagation range extends this many sections around the starting view (default 4)')
     parser.add_argument('--propagate-max-slices', type=int, default=32,
@@ -373,6 +380,9 @@ def main():
     interactive = dict(backend=args.prompt_backend, checkpoint=args.prompt_checkpoint,
                        decoder_checkpoint=args.prompt_decoder, model_config=args.prompt_config,
                        model_type=args.prompt_model_type, device=args.prompt_device,
+                       sam2_runtime=args.sam2_runtime, onnx_dir=args.sam2_onnx_dir,
+                       onnx_provider=args.onnx_provider, onnx_threads=args.onnx_threads,
+                       feature_cache_mb=args.feature_cache_mb,
                        propagation_radius=args.propagate_radius, propagation_max_slices=args.propagate_max_slices,
                        output_dir=Path(args.output_dir) / 'interactive') if args.interactive else None
     import neuroglancer

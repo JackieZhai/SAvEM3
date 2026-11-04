@@ -62,6 +62,10 @@ def session(tmp_path, monkeypatch):
     controller = viewer.probe_em_interactive
     assert report['alignment']['enabled'] and report['interactive']['enabled']
     assert viewer.state.show_slices is False
+    bindings = viewer.config_state.state.input_event_bindings
+    assert bindings.viewer['keyd'] == bindings.slice_view['keyd'] == 'prompt-previous-section'
+    assert bindings.viewer['keyf'] == bindings.slice_view['keyf'] == 'prompt-next-section'
+    assert 'keyj' not in bindings.viewer and 'keyk' not in bindings.viewer
     assert viewer.state.position[2] % 1 == .5
     assert not viewer.state.layers['probe_trace'].visible
     yield controller

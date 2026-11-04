@@ -6,6 +6,11 @@ with SAM2 through a selected z range, inspect the result, then accept it into a
 local review artifact. Adding points does not start inference. A completed Probe-EM
 trace is optional. Points are retained separately on each section of the same object.
 
+For multiple cached ROIs, the [test-window browser](README_windows.md) adds visible
+Previous/Next buttons and a selector; each window retains its own points and results.
+The [SAM2 acceleration guide](README_acceleration.md) covers the default 512 MiB
+feature cache and optional ONNX encoder for both image prediction and propagation.
+
 ## Start a local session
 
 Run from the repository root in the environment described in [INSTALL.md](INSTALL.md):
@@ -46,7 +51,7 @@ See the [SOFIMA guide](README_sofima.md) for installation and quality controls.
 | Add a positive point inside the target | Hover in the XY panel and press **P** |
 | Add a negative point on an unwanted neighbor/background | Hover in the XY panel and press **N** |
 | Predict the currently viewed XY section from its points | **I** |
-| Move to the previous/next XY section | **J** / **K**, or normal Neuroglancer navigation |
+| Move to the previous/next XY section | **D** / **F**, or normal Neuroglancer navigation |
 | Set the propagation range's first/last section | **B** / **E** at the desired sections |
 | Propagate all conditioning points through the selected range (SAM2) | **V** |
 | Cancel the current task and discard its pending preview | **X** |
@@ -67,7 +72,7 @@ slice panels, but points are interpreted as XY prompts on their snapped z sectio
 
 I reads only the points on the currently viewed XY section. If it has no positive
 point, the status message asks for one; it never silently reruns a previous section.
-For example: P/N -> I -> K -> P/N -> I works without C. Returning with J lets you
+For example: P/N -> I -> F -> P/N -> I works without C. Returning with D lets you
 edit and rerun the previous section's retained points. A direct annotation-tab
 edit may move a point to another section; its z coordinate determines its group.
 P/N always use the current XY section's z, even when mouse picking snaps to an
@@ -119,7 +124,7 @@ the device: CPU-offloaded states produced nonfinite logits in local validation
 of the installed legacy SAM2 runtime. CPU inference and MPS inference were tested;
 CUDA video propagation is not validated by these local runs.
 
-The volume preview spans the full selected range. Scroll or J/K to inspect
+The volume preview spans the full selected range. Scroll or D/F to inspect
 sections without prompts; Y accepts the whole preview. Empty output sections
 are reported, and X stops a running task. No automatic anatomical stopping or
 complete-neuron criterion is claimed. This is bounded one-object propagation

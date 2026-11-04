@@ -6,6 +6,9 @@ native-coordinate masks against annotated neuron instances. It compares original
 ECC and optional SOFIMA inputs using identical windows and conditioning points.
 It does not align, segment or load an entire large volume.
 
+The [test-window browser](README_windows.md) displays these cached ROIs behind
+Previous/Next buttons and a selector, retaining each window's points and predictions.
+
 ## Data and coordinate contract
 
 The November 2026 local `zfishlc` dataset has native raw dimensions

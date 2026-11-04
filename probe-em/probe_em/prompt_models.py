@@ -1,6 +1,7 @@
 """Lazy local image predictors for explicitly triggered point-prompt sessions."""
 import hashlib
 from pathlib import Path
+import threading
 
 import numpy as np
 
@@ -49,14 +50,15 @@ class BaseSAMPredictor:
 
 
 class PointModel:
-    """One backend per session; reuse the last section embedding across edits.
+    """Serialized model access for independent interactive review controllers.
 
-    Inference always uses native raw pixels. Alignment affects display and prompt
-    coordinates only, so toggling the viewer does not change model inputs.
+    Image prediction uses native raw pixels. Video uses the display grid selected
+    at task start, with fresh temporal memory and optional cached image features.
     """
 
     def __init__(self, backend, checkpoint, *, model_type='vit_b', model_config=None,
-                 decoder_checkpoint=None, device='auto'):
+                 decoder_checkpoint=None, device='auto', sam2_runtime='torch', onnx_dir=None,
+                 onnx_provider='cpu', onnx_threads=0, feature_cache_mb=0):
         if backend not in ('sam', 'hq_sam', 'sam2', 'saem2'):
             raise ValueError('Expected sam, hq_sam, sam2 or saem2 backend')
         if model_type not in ('vit_b', 'vit_l', 'vit_h'):
@@ -65,6 +67,10 @@ class PointModel:
             raise ValueError('SAM 2 requires a model config matching its checkpoint')
         if backend == 'saem2' and not decoder_checkpoint:
             raise ValueError('SAEM2 requires both HQ and trained decoder checkpoints')
+        if backend != 'sam2' and (sam2_runtime != 'torch' or onnx_dir is not None):
+            raise ValueError('ONNX acceleration requires the SAM2 backend')
+        if sam2_runtime not in ('torch', 'onnx') or (sam2_runtime == 'onnx' and onnx_dir is None):
+            raise ValueError('Use torch, or onnx with an exported --sam2-onnx-dir')
         paths = {'checkpoint': checkpoint}
         if backend == 'saem2':
             paths['decoder_checkpoint'] = decoder_checkpoint
@@ -79,6 +85,10 @@ class PointModel:
         self.predictor = None
         self.sam2_cache = None
         self.image_key = None
+        self.lock = threading.RLock()
+        self.runtime_options = dict(sam2_runtime=sam2_runtime, onnx_dir=onnx_dir,
+                                    onnx_provider=onnx_provider, onnx_threads=onnx_threads,
+                                    feature_cache_mb=feature_cache_mb)
         self.metadata = {'backend': backend, 'device': self.device, 'model_type': model_type,
                          'model_config': model_config, 'weights': {},
                          'multimask_output': False, 'inference_space': 'original_native_xy'}
@@ -102,7 +112,7 @@ class PointModel:
         import torch
         from probe_em.device import inference_autocast
         key = (image.shape, hashlib.sha256(image.tobytes()).hexdigest())
-        with torch.inference_mode(), inference_autocast(self.device):
+        with self.lock, torch.inference_mode(), inference_autocast(self.device):
             if self.predictor is None:
                 self._load()
             if key != self.image_key:
@@ -116,6 +126,8 @@ class PointModel:
             masks, scores = np.asarray(masks), np.asarray(scores).reshape(-1)
             if masks.shape != (1, *image.shape[:2]) or scores.shape != (1,) or not np.isfinite(scores).all():
                 raise ValueError('Predictor returned an invalid single-mask result')
+            if self.sam2_cache is not None:
+                self.metadata['acceleration'] = self.sam2_cache.acceleration.info()
             return masks[0], float(scores[0])
 
     def _sam2(self):
@@ -125,7 +137,8 @@ class PointModel:
             from probe_em.runtime import PredictorCache
             for name, path in self.paths.items():
                 self.metadata['weights'][name] = {'path': path, 'sha256': file_digest(path)}
-            self.sam2_cache = PredictorCache(self.paths['checkpoint'], self.model_config, self.device)
+            self.sam2_cache = PredictorCache(self.paths['checkpoint'], self.model_config, self.device,
+                                             **self.runtime_options)
         return self.sam2_cache
 
     def propagate(self, video_path, prompts, *, cancel, progress=None):
@@ -139,7 +152,7 @@ class PointModel:
         from probe_em.device import inference_autocast
         from probe_em.propagation import check_cancelled
         state = None
-        with torch.inference_mode(), inference_autocast(self.device):
+        with self.lock, torch.inference_mode(), inference_autocast(self.device):
             check_cancelled(cancel)
             predictor = self._sam2().video()
             try:
@@ -183,3 +196,4 @@ class PointModel:
             finally:
                 if state is not None:
                     predictor.reset_state(state)
+                self.metadata['acceleration'] = self.sam2_cache.acceleration.info()

@@ -24,7 +24,7 @@ from probe_em.propagation import PropagationCancelled, PropagationGrid, check_ca
 
 POINT_LAYERS = {1: 'positive_points', 0: 'negative_points'}
 LAYER_NAMES = (*POINT_LAYERS.values(), 'sam_preview', 'sam_accepted')
-HELP = ('p/n: points; i: current slice; j/k: previous/next slice; b/e: range start/end; '
+HELP = ('p/n: points; i: current slice; d/f: previous/next slice; b/e: range start/end; '
         'v: SAM2 propagate; x: stop; u: undo; c: new object; y: accept/save. ')
 
 
@@ -81,7 +81,7 @@ class InteractiveSession:
                 state.input_event_bindings.slice_view[f'key{key}'] = f'prompt-{action}'
             for key, action in (('i', 'run'), ('c', 'clear'), ('u', 'undo'), ('y', 'accept'),
                                 ('v', 'propagate'), ('x', 'stop'), ('b', 'range-start'), ('e', 'range-end'),
-                                ('j', 'previous-section'), ('k', 'next-section')):
+                                ('d', 'previous-section'), ('f', 'next-section')):
                 state.input_event_bindings.viewer[f'key{key}'] = f'prompt-{action}'
                 # Slice-panel defaults take priority over viewer bindings.
                 state.input_event_bindings.slice_view[f'key{key}'] = f'prompt-{action}'
@@ -375,7 +375,7 @@ class InteractiveSession:
                 with self.viewer.txn() as state:
                     self._render_mask(state, 'sam_preview', self.preview, self.mode['aligned'])
                 empty = len(metadata['empty_sections'])
-                self.status(f'Propagation preview: {count} slices, {empty} empty. Scroll or J/K to inspect; '
+                self.status(f'Propagation preview: {count} slices, {empty} empty. Scroll or D/F to inspect; '
                             'Y accepts the full range. Add correction points and V to rerun. ' + HELP)
         except Exception as error:
             if folder.is_dir():

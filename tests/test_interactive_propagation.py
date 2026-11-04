@@ -157,7 +157,8 @@ def test_video_grid_maps_dense_prompts_and_masks_back_to_native(tmp_path, regist
 
 
 @pytest.mark.skipif(not os.environ.get('PROBE_EM_SAM2_CHECKPOINT'), reason='No local SAM2 checkpoint configured')
-def test_real_sam2_forward_reverse_video_cancellation_and_fresh_memory(tmp_path):
+@pytest.mark.parametrize('feature_cache_mb', [0, 64])
+def test_real_sam2_forward_reverse_video_cancellation_and_fresh_memory(tmp_path, feature_cache_mb):
     import torch
     from probe_em.prompt_models import PointModel
     torch.set_num_threads(2)
@@ -166,7 +167,7 @@ def test_real_sam2_forward_reverse_video_cancellation_and_fresh_memory(tmp_path)
         image[15:30, 20+index:40+index] = 60
         Image.fromarray(image).save(tmp_path/f'{index:05d}.jpg', quality=100, subsampling=0)
     model = PointModel('sam2', os.environ['PROBE_EM_SAM2_CHECKPOINT'], model_config='sam2_hiera_t.yaml',
-                        device=os.environ.get('SAVEM3_TEST_DEVICE', 'cpu'))
+                        device=os.environ.get('SAVEM3_TEST_DEVICE', 'cpu'), feature_cache_mb=feature_cache_mb)
     prompts = {1: (np.array([[30, 22], [4, 4]]), np.array([1, 0]))}
     cancel = threading.Event()
     iterator = model.propagate(tmp_path, prompts, cancel=cancel)
@@ -182,3 +183,10 @@ def test_real_sam2_forward_reverse_video_cancellation_and_fresh_memory(tmp_path)
     prompts[2] = (np.array([[32, 23]]), np.array([1]))
     corrected = list(model.propagate(tmp_path, prompts, cancel=threading.Event()))
     assert model.sam2_cache.video() is video and len(corrected) == 3
+    if feature_cache_mb:
+        assert model.metadata['acceleration']['feature_cache']['hits'] > 0
+        fresh = PointModel('sam2', os.environ['PROBE_EM_SAM2_CHECKPOINT'], model_config='sam2_hiera_t.yaml',
+                           device=os.environ.get('SAVEM3_TEST_DEVICE', 'cpu'))
+        reference = dict(fresh.propagate(tmp_path, prompts, cancel=threading.Event()))
+        for index, mask in corrected:
+            np.testing.assert_array_equal(mask, reference[index])

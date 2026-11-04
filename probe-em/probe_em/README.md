@@ -7,6 +7,12 @@ SAM/HQ-SAM/SAM2/SAEM2 image adapters and bidirectional SAM2 video memory.
 registered and original grids, including SOFIMA. See the
 [interactive guide](../README_interactive.md) for controls, coordinates and scope.
 
+`window_browser.py` keeps independent review sessions behind a local Previous/Next
+toolbar and selector. `sam2_acceleration.py` provides an optional ONNX encoder and
+a bounded CPU feature cache. Neither caches temporal memory; `PointModel` serializes
+shared model calls. See [test windows](../README_windows.md) and
+[runtime options](../README_acceleration.md) for setup and measurements.
+
 This implementation follows
 [Probe-EM: Targeted Neuron Tracing via Training-Free Semantic Verification](https://arxiv.org/html/2607.04696v1).
 Tracing starts at a seed segment. Models verify candidate connections without

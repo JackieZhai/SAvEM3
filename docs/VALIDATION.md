@@ -5,7 +5,7 @@ automation, screenshots, model execution experiments and detailed machine logs
 are retained outside the published source. Maintained unit and regression tests
 cover implementation contracts and previously observed failures.
 
-The publication regression suite passed **150 tests**, with 4 native-package
+The publication regression suite passed **160 tests**, with 4 native-package
 skips and 1 third-party deprecation warning. It included the optional real SAM2
 propagation, isolated SOFIMA and upgraded-runtime regressions. English-source and whitespace checks
 passed. Model execution experiments and local sampling records were removed from
@@ -51,7 +51,7 @@ recovery and accepting only results matching their conditioning points.
 Browser testing exposed two additional navigation issues: picking could snap a
 new point to a neighboring section's annotation, and slice-panel key bindings
 could override viewer actions. P/N now use the current XY section's z, and the
-interactive controls are bound in both relevant input scopes. Relative J/K
+interactive controls are bound in both relevant input scopes. Relative D/F
 navigation also tolerates pending client updates.
 
 A real Chrome/WebGL session on cached zebrafish region 1 used SAM2/MPS with the
@@ -68,7 +68,7 @@ segmentation accuracy claim.
 
 A second browser session used a local 1024 x 1024 x 33 GT window at 8 x 8 x 30 nm.
 Raw, GT, three saved SAM2 comparisons and mito/syn/ves context layers rendered
-successfully. J/K navigation and A toggles were exercised with all eight volume
+successfully. Slice navigation and A toggles were exercised with all eight volume
 sources synchronized. The completed check recorded no JavaScript errors or failed
 local requests. The 3D view contains a cropped slab, not a complete neuron.
 
@@ -76,6 +76,33 @@ Dense affine mask mapping now batches points by section. Regression coverage
 checks fractional sections, inverse transforms, nonzero origins and exact label
 geometry. This removes a Python loop per pixel; the optimization changes mapping
 cost, not the model, estimated field or scoring definition.
+
+The [window browser](../probe-em/README_windows.md) was exercised in Chrome/WebGL
+with all five cached GT windows. Previous/Next, the selector, D/F section movement
+and per-window point retention passed with zero JavaScript errors or failed local
+requests. Every window retained default-on registration, `showSlices=false` and
+32 x 32 x 30 nm mesh sampling. Unit tests cover duplicate loads, explicit retry,
+shutdown during loading, exact seed IDs and relative manifest paths.
+Real SAM2/MPS image prediction ran in two separate windows using the shared model.
+A nine-section registered propagation completed in one window; switching away and
+back preserved that volume and the other window's image preview. Its native saved
+mask covered every requested section, with zero browser errors or failed requests.
+
+## SAM2 encoder acceleration
+
+The [runtime guide](../probe-em/README_acceleration.md) records actual image/video
+latency and mask agreement for Torch CPU/MPS, ONNX CPU/CoreML and a bounded feature
+cache. The cached MPS runs were about 4.9x faster for revisiting image sections and
+1.5x for repeated five-section propagation, with identical masks to uncached MPS.
+ONNX CPU/CoreML worked but did not improve latency in that local workload; their
+image/video Dice against Torch exceeded 0.999997. Torch remains the default.
+
+Feature-store regression tests cover memory limits, eviction, pixel-content keys,
+caller mutation, encoder checkpoint/artifact mismatch and shared-model concurrency.
+The real SAM2 propagation regression now runs with caching disabled and enabled;
+correction after cancellation agrees with a fresh uncached model. Temporal memory
+is never reused between runs or windows. Windows/Linux and CUDA/DirectML hardware
+were not available; the provider interfaces are not hardware-validation claims.
 
 ## Local registration
 

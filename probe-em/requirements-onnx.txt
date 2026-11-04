@@ -1,0 +1,5 @@
+# Optional CPU/CoreML image encoder runtime and exporter; Python >=3.11.
+# Install after requirements.txt. Keep Torch for SAM2 decoding and video memory.
+# CUDA/DirectML require a different ORT distribution; see README_acceleration.md.
+onnx==1.23.2
+onnxruntime==1.31.1
