@@ -2,6 +2,9 @@
 
 `demo_windows.py` serves multiple cached ROIs with Previous/Next buttons, a selector
 and independent annotations/results. See the [window-browser guide](../README_windows.md).
+Its compact SAEM²-SAEvM³ toolbar includes live status messages. An optional
+full-volume overview streams raw/lc data and shows native ROI bounds without
+local registration; requested chunks are cached on disk.
 `export_sam2_onnx.py` exports and validates the optional SAM2 encoder;
 `benchmark_sam2_runtime.py` measures image/video latency and mask agreement on
 local inputs. See [runtime options and measurements](../README_acceleration.md).

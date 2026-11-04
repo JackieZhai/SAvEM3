@@ -8,6 +8,9 @@ It does not align, segment or load an entire large volume.
 
 The [test-window browser](README_windows.md) displays these cached ROIs behind
 Previous/Next buttons and a selector, retaining each window's points and predictions.
+An **Entire lc** entry provides an unregistered multiscale overview with the five
+ROI bounding boxes and the original lc meshes. It caches viewed chunks locally
+instead of reading the full 672 GB native raw array.
 
 ## Data and coordinate contract
 

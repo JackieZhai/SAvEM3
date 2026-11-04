@@ -1,12 +1,19 @@
 # Switch between cached Neuroglancer test windows
 
-`scripts/demo_windows.py` serves one browser page with **Previous window**,
-**Next window**, a named window selector and **Open in tab**. Each window has its
+`scripts/demo_windows.py` serves the compact **SAEM²-SAEvM³** browser with
+**Previous**, **Next**, a named window selector and **Open in tab**. Each ROI has its
 own Neuroglancer viewer, points, current section, propagation range, preview and
 accepted result. Switching returns to that state; it does not start inference.
 Click the image for keyboard focus: **D/F** moves one section, **P/N** adds points,
 **I** predicts the current section and **V** propagates through the **B/E** range.
 See the [interactive guide](README_interactive.md) for editing and acceptance.
+
+The desktop toolbar uses 12 px controls and a 31 px bar, matching the scale of
+Neuroglancer's layer tabs. Alignment/seed information and propagation/prediction
+status appear on its right side instead of below the images. Click that status
+area to expand the complete messages; Escape closes it. Long messages are
+ellipsized in the compact bar, not discarded. Standalone `demo.py` sessions keep
+their native status messages.
 
 ## Describe the cached windows
 
@@ -19,6 +26,13 @@ must be an existing positive segment ID; it controls navigation, not model input
   "schema_version": 1,
   "initial_index": 0,
   "windows": [
+    {
+      "kind": "overview",
+      "name": "Entire lc",
+      "raw_path": "source/raw",
+      "seg_path": "source/lc",
+      "segments": [30001, 30002, 30003, 30004, 30005]
+    },
     {
       "name": "Neuron A",
       "local_dir": "neuron_a/cache",
@@ -41,7 +55,7 @@ must be an existing positive segment ID; it controls navigation, not model input
 }
 ```
 
-Only `name`, `local_dir` and `seed` are required for each window.
+For an ROI, only `name`, `local_dir` and `seed` are required; `kind` defaults to `roi`.
 `position_xyz` uses absolute native voxel coordinates at the cached resolution;
 the viewer maps it into the registered display. `traced_ids` optionally selects
 existing trace labels. `image_layers` adds named context images, such as mito,
@@ -62,12 +76,44 @@ python probe-em/scripts/demo_windows.py \
   --output-dir .cache/window-review --open
 ```
 
-Local registration is enabled by default. A supplied field is reused; otherwise
+Local registration is enabled by default for ROIs. A supplied field is reused; otherwise
 ECC estimates it from the bounded ROI. A saved SOFIMA field is also supported.
 `--no-align-z` skips registration, and **A** toggles the registered/original view
 when a field is available. `showSlices=false` and near-isotropic meshing remain
 the defaults. The initial propagation radius is four sections; use
 `--propagate-radius` and `--propagate-max-slices` to change the range and limit.
+
+## Full-volume overview
+
+An optional `kind: "overview"` entry adds **Entire lc** to the selector. Its
+`raw_path` and `seg_path` are local multiscale precomputed directories describing
+the same physical extent. This view always uses original coordinates, with local
+registration disabled. It does not run SAM2 or construct a whole-volume array.
+Choose an ROI in the selector to use point prediction and propagation.
+
+The `test_windows` annotation layer contains a named bounding box for every ROI.
+Bounds come from each cached `raw/info`: offset and size are converted through
+physical nm into the overview's native coordinates. Upper bounds are exclusive.
+This correctly places the 8 nm test windows inside the 4 nm full `zfishlc` volume.
+All boxes are visible in 3D; slice views show their intersections. D/F navigates
+native sections in the overview too. A does not enable overview registration.
+
+Raw and lc labels stream from their original mip pyramids. The optional `segments`
+list selects the displayed lc IDs; by default it uses the ROI seeds. Existing
+precomputed lc meshes are served unchanged. The local example's mesh metadata
+specifies 32 x 32 x 30 nm. Newly computed ROI meshes retain their near-isotropic
+policy, and every view keeps `showSlices=false`.
+
+Only requested metadata/chunks/mesh fragments are copied to
+`OUTPUT/overview_cache/`, or `--overview-cache /path/on/local-ssd`. Gzip chunks are
+served with their HTTP content encoding; uncompressed files support range reads.
+Requests are confined to the configured volume directories. A successful cached
+chunk can be revisited without rereading the source. Unseen data still requires
+the source volume, and this is not a complete offline copy of the dataset.
+Cache identities include the source path and metadata hash. Sources are treated
+as immutable; use a fresh cache after replacing chunks without changing metadata.
+
+## Session state and saved links
 
 Windows load lazily, with a loading message and an explicit retry button after
 failure. Next/Previous wrap at the ends. A loading window stays hidden to prevent
@@ -84,9 +130,12 @@ Keep the Python server running. A switch preserves state for that process's
 lifetime, including pending inference in other windows. It is not an automatic
 restore mechanism after restarting Python. Prediction inputs, masks and acceptance
 records are saved under `OUTPUT/window_NNN/interactive/`; local alignment and
-mesh caches are separate subdirectories. Both the toolbar URL and each loaded
-window's standalone URL are saved as `viewer_url.txt`.
+mesh caches are separate subdirectories. Both the main URL and each loaded
+window's URL are saved as `viewer_url.txt`; window links include `#window=N` and
+retain the toolbar. **Open in tab** also retains switching and status controls.
+The internal iframe URL is separately saved as `neuroglancer_url.txt`.
 
 The local five-neuron demonstration uses the bounded windows described in the
 [local GT guide](README_local_gt.md). Raw, labels and comparison results are read
-from local caches; this browser does not download or register the whole volume.
+from local caches. Its additional full-lc view fetches chunks on demand and never
+registers the whole volume.

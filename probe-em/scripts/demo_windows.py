@@ -12,6 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from demo import build_viewer
 from probe_em.demo_alignment import map_points
 from probe_em.prompt_models import PointModel
+from probe_em.precomputed_files import PrecomputedFiles
+from probe_em.overview import build_overview
+from probe_em.viewer_status import attach_toolbar_status
 from probe_em.window_browser import WindowCollection, read_windows, serve_windows
 
 
@@ -31,6 +34,7 @@ def main():
     parser.add_argument('--no-align-z', action='store_true')
     parser.add_argument('--max-voxels', type=int, default=128_000_000)
     parser.add_argument('--output-dir', type=Path, required=True)
+    parser.add_argument('--overview-cache', type=Path, help='Disk cache for requested whole-volume chunks')
     parser.add_argument('--bind', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=0)
     parser.add_argument('--open', action='store_true')
@@ -40,6 +44,13 @@ def main():
     windows, initial = read_windows(args.windows)
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    volumes = PrecomputedFiles(args.overview_cache or output/'overview_cache')
+    overview_info = {}
+    for index, item in enumerate(windows):
+        if item['kind'] == 'overview':
+            overview_info[index] = {
+                kind: volumes.register(f'overview_{index}_{kind}', item[kind+'_path'])
+                for kind in ('raw', 'seg')}
     options = dict(backend='sam2', checkpoint=args.checkpoint, model_config=args.model_config, device=args.device,
                    sam2_runtime=args.sam2_runtime, onnx_dir=args.sam2_onnx_dir, onnx_provider=args.onnx_provider,
                    onnx_threads=args.onnx_threads, feature_cache_mb=args.feature_cache_mb)
@@ -49,6 +60,12 @@ def main():
 
     def build(index, item):
         folder = output/f'window_{index:03d}'
+        if item['kind'] == 'overview':
+            sources = {kind: f'precomputed://{url}data/overview_{index}_{kind}' for kind in ('raw', 'seg')}
+            viewer, report = build_overview(item, windows, overview_info[index]['raw'], overview_info[index]['seg'],
+                                           sources['raw'], sources['seg'])
+            publish(viewer, report, folder, item, index)
+            return viewer
         viewer, report = build_viewer(item['local_dir'], item.get('traced_ids', []), item['seed'],
             folder/'reviews', args.max_voxels, align_z=not args.no_align_z,
             align_field=item.get('align_field') if not args.no_align_z else None,
@@ -92,20 +109,25 @@ def main():
                     state.layers[name].selected_alpha = .22 if name == 'ground_truth' else .35
                     state.layers[name].object_alpha = .35 if name == 'ground_truth' else .8
             session.status('D/F: previous/next slice. Add P/N points; I predicts; V propagates. Each test window retains its points.')
-            report['window'] = item['name']
             report['interactive']['propagation_range_inclusive'] = session.propagation_range
-            folder.mkdir(parents=True, exist_ok=True)
-            (folder/'report.json').write_text(json.dumps(report, indent=2))
-            (folder/'viewer_url.txt').write_text(viewer.get_viewer_url()+'\n')
+            publish(viewer, report, folder, item, index)
         except BaseException:
             session.close()
             raise
         return viewer
 
+    def publish(viewer, report, folder, item, index):
+        attach_toolbar_status(viewer)
+        report['window'] = item['name']
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder/'report.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+        (folder/'viewer_url.txt').write_text(url+f'#window={index}\n', encoding='utf-8')
+        (folder/'neuroglancer_url.txt').write_text(viewer.get_viewer_url()+'\n', encoding='utf-8')
+
     collection = WindowCollection(windows, build, initial)
-    server, url = serve_windows(collection, args.bind, args.port)
+    server, url = serve_windows(collection, args.bind, args.port, volumes=volumes)
     (output/'viewer_url.txt').write_text(url+'\n')
-    print(f'Probe-EM window browser: {url}', flush=True)
+    print(f'SAEM²-SAEvM³ window browser: {url}', flush=True)
     collection.request(initial)
     if args.open:
         webbrowser.open(url)

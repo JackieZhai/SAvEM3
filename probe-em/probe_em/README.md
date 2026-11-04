@@ -12,6 +12,10 @@ toolbar and selector. `sam2_acceleration.py` provides an optional ONNX encoder a
 a bounded CPU feature cache. Neither caches temporal memory; `PointModel` serializes
 shared model calls. See [test windows](../README_windows.md) and
 [runtime options](../README_acceleration.md) for setup and measurements.
+`overview.py` places ROI boxes in an unregistered full-volume view;
+`precomputed_files.py` streams scoped local files through a persistent chunk cache.
+`viewer_status.py` routes live messages to the compact toolbar without changing
+the native status behavior of standalone demos.
 
 This implementation follows
 [Probe-EM: Targeted Neuron Tracing via Training-Free Semantic Verification](https://arxiv.org/html/2607.04696v1).

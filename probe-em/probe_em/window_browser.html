@@ -2,31 +2,40 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Probe-EM test windows</title>
+<title>SAEM²-SAEvM³</title>
 <style>
-  :root { color-scheme:dark; font:14px system-ui,sans-serif; background:#11151a; color:#edf2f7; }
+  :root { color-scheme:dark; font:12px Arial,sans-serif; background:#11151a; color:#edf2f7; }
   body { margin:0; height:100vh; display:flex; flex-direction:column; }
-  header { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:10px 14px; border-bottom:1px solid #414b57; }
-  strong { margin-right:6px; white-space:nowrap; }
-  button,select,a { font:inherit; color:inherit; border:1px solid #556474; border-radius:5px; padding:7px 10px; background:#202b35; }
+  header { display:flex; align-items:center; gap:5px; padding:2px 6px; min-height:26px; border-bottom:1px solid #414b57; }
+  strong { margin-right:5px; white-space:nowrap; font-size:12px; }
+  button,select,a { box-sizing:border-box; font:inherit; color:inherit; border:1px solid #556474; border-radius:2px; padding:2px 5px; background:#202b35; }
   button { cursor:pointer; } button:hover,a:hover { background:#324552; }
-  button:focus-visible,select:focus-visible,a:focus-visible { outline:2px solid #7ad6cd; outline-offset:2px; }
-  select { min-width:170px; } a { text-decoration:none; }
-  .hint { color:#b9c5d1; margin-left:auto; font-size:12px; }
+  button:focus-visible,select:focus-visible,a:focus-visible { outline:2px solid #7ad6cd; outline-offset:1px; }
+  select { width:150px; } a { text-decoration:none; white-space:nowrap; }
+  #status { flex:1; min-width:0; align-self:stretch; text-align:left; border:0; background:transparent; padding:0 0 0 9px; color:#ced9e3; font:11px/13px Arial,sans-serif; }
+  #status:hover { background:#202b35; }
+  #status span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #status-line-2 { color:#aebfcf; }
+  #status-detail { position:fixed; z-index:5; right:6px; top:33px; max-width:min(850px,calc(100vw - 28px)); max-height:45vh; overflow:auto; border:1px solid #667789; border-radius:3px; background:#17212b; padding:10px; box-shadow:0 4px 18px #0009; }
+  #status-text { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.5 Arial,sans-serif; }
   main { flex:1; position:relative; min-height:0; }
   iframe { border:0; height:100%; width:100%; visibility:hidden; background:#111; }
-  #notice { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:16px; padding:24px; text-align:center; }
+  #notice { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px; padding:24px; text-align:center; }
   #notice[hidden], [hidden] { display:none !important; }
   #message { max-width:680px; white-space:pre-wrap; overflow-wrap:anywhere; color:#d8e1eb; }
+  @media (max-width:780px) { header { flex-wrap:wrap; } #status { flex-basis:100%; min-height:26px; padding-left:0; } #status-detail { top:59px; } }
 </style>
 <header>
-  <strong>Probe-EM</strong>
-  <button id="previous" type="button" aria-label="Previous test window">Previous window</button>
+  <strong>SAEM²-SAEvM³</strong>
+  <button id="previous" type="button" aria-label="Previous test window" title="Previous window">Previous</button>
   <select id="window" aria-label="Test window"></select>
-  <button id="next" type="button" aria-label="Next test window">Next window</button>
-  <a id="standalone" target="_blank" rel="noopener" hidden>Open in tab</a>
-  <span class="hint">Click the image · D/F: slices · P/N: points · I: predict · V: propagate</span>
+  <button id="next" type="button" aria-label="Next test window" title="Next window">Next</button>
+  <a id="standalone" target="_blank" rel="noopener" title="Open this window in another tab" hidden>Open in tab</a>
+  <button id="status" type="button" aria-label="Show full viewer status" aria-expanded="false" aria-controls="status-detail">
+    <span id="status-line-1">Loading window list…</span><span id="status-line-2">D/F: slices · P/N: points · I: predict · V: propagate</span>
+  </button>
 </header>
+<aside id="status-detail" hidden><pre id="status-text"></pre></aside>
 <main>
   <iframe id="viewer" title="Neuroglancer test window" allow="fullscreen"></iframe>
   <div id="notice"><span id="message" role="status" aria-live="polite">Loading window list…</span><button id="retry" type="button" hidden>Retry loading</button></div>
@@ -34,35 +43,61 @@
 <script>
   const base=location.pathname.replace(/\/$/,''), select=document.querySelector('#window'), frame=document.querySelector('#viewer');
   const message=document.querySelector('#message'), notice=document.querySelector('#notice'), retry=document.querySelector('#retry'), standalone=document.querySelector('#standalone');
+  const status=document.querySelector('#status'), details=document.querySelector('#status-detail'), statusText=document.querySelector('#status-text');
   let windows=[], current=0, generation=0;
   const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  function showStatus(messages) {
+    const lines=messages.map(item=>item.text);
+    document.querySelector('#status-line-1').textContent=lines[0]||'';
+    document.querySelector('#status-line-2').textContent=lines.slice(1).join(' · ');
+    const full=lines.join('\n\n'); statusText.textContent=full; status.title=full+'\nClick to expand the full status.';
+  }
+  function closeDetails(){details.hidden=true;status.setAttribute('aria-expanded','false');}
+  status.onclick=()=>{details.hidden=!details.hidden;status.setAttribute('aria-expanded',String(!details.hidden));};
+  document.addEventListener('keydown',event=>{if(event.key==='Escape')closeDetails();});
+  document.addEventListener('click',event=>{if(!status.contains(event.target)&&!details.contains(event.target))closeDetails();});
   async function api(path,method='GET') {
     const response=await fetch(base+'/api/'+path,{method,cache:'no-store'});
     const data=await response.json();
     if(!response.ok) throw new Error(data.error||'Request failed');
     return data;
   }
+  async function watchStatus(index,version) {
+    while(version===generation) {
+      try {
+        const data=await api('windows/'+index+'/status');
+        if(version!==generation)return;
+        showStatus(data.messages);
+      } catch(error) {
+        if(version!==generation)return;
+        showStatus([{text:'Status connection unavailable: '+error.message},{text:'Reconnecting…'}]);
+      }
+      await delay(500);
+    }
+  }
   async function choose(index,repeat=false) {
     const version=++generation;
     current=(index+windows.length)%windows.length;
+    const chosen=current;
     select.value=String(current);
     history.replaceState(null,'','#window='+current);
-    frame.style.visibility='hidden'; notice.hidden=false; retry.hidden=true; standalone.hidden=true;
-    message.textContent='Loading '+windows[current].name+'… Points and results in other windows are retained.';
+    closeDetails();frame.style.visibility='hidden';notice.hidden=false;retry.hidden=true;standalone.hidden=true;
+    message.textContent='Loading '+windows[current].name+'…';showStatus([{text:message.textContent}]);
     try {
-      let data=await api('windows/'+current+(repeat?'/retry':''),repeat?'POST':'GET');
+      let data=await api('windows/'+chosen+(repeat?'/retry':''),repeat?'POST':'GET');
       while(data.state==='loading') {
-        await delay(750);
+        await delay(500);
         if(version!==generation) return;
-        data=await api('windows/'+current);
+        data=await api('windows/'+chosen);
       }
       if(version!==generation) return;
       if(data.state!=='ready') throw new Error(data.error||'Window is unavailable');
       frame.onload=()=>{if(version===generation){notice.hidden=true;frame.style.visibility='visible';frame.contentWindow.focus();}};
-      standalone.href=data.url; standalone.hidden=false;
+      standalone.href=location.href;standalone.hidden=false;
       frame.src=data.url;
+      void watchStatus(chosen,version);
     } catch(error) {
-      if(version===generation){message.textContent=error.message;retry.hidden=false;}
+      if(version===generation){message.textContent=error.message;retry.hidden=false;showStatus([{text:error.message}]);}
     }
   }
   document.querySelector('#previous').onclick=()=>choose(current-1);
@@ -71,11 +106,11 @@
   retry.onclick=()=>choose(current,true);
   (async()=>{
     try {
-      const data=await api('windows'); windows=data.windows;
+      const data=await api('windows');windows=data.windows;
       for(const item of windows){const option=document.createElement('option');option.value=item.index;option.textContent=item.name;select.append(option);}
       const match=location.hash.match(/^#window=(\d+)$/), index=match?Number(match[1]):data.initial_index;
       await choose(index>=0&&index<windows.length?index:data.initial_index);
-    } catch(error){message.textContent=error.message;}
+    } catch(error){message.textContent=error.message;showStatus([{text:error.message}]);}
   })();
 </script>
 </html>

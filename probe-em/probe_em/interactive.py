@@ -19,6 +19,7 @@ from probe_em.demo_alignment import map_points
 from probe_em.alignment_field import field_slice_payload, warp_field_slice
 from probe_em.meshes import MeshVolume
 from probe_em.prompt_models import PointModel
+from probe_em.viewer_status import set_status
 from probe_em.propagation import PropagationCancelled, PropagationGrid, check_cancelled
 
 
@@ -102,9 +103,8 @@ class InteractiveSession:
         return invoke
 
     def status(self, message):
-        with self.viewer.config_state.txn() as state:
-            state.status_messages['probe-em-interactive'] = (
-                f'Propagation range: z={self.propagation_range[0]}..{self.propagation_range[1]} (inclusive). ' + message)
+        set_status(self.viewer, 'probe-em-interactive',
+                   f'Propagation range: z={self.propagation_range[0]}..{self.propagation_range[1]} (inclusive). ' + message)
 
     def _current_z(self, action=None):
         state = self.viewer.state

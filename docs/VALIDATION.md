@@ -5,7 +5,7 @@ automation, screenshots, model execution experiments and detailed machine logs
 are retained outside the published source. Maintained unit and regression tests
 cover implementation contracts and previously observed failures.
 
-The publication regression suite passed **160 tests**, with 4 native-package
+The publication regression suite passed **165 tests**, with 4 native-package
 skips and 1 third-party deprecation warning. It included the optional real SAM2
 propagation, isolated SOFIMA and upgraded-runtime regressions. English-source and whitespace checks
 passed. Model execution experiments and local sampling records were removed from
@@ -87,6 +87,22 @@ Real SAM2/MPS image prediction ran in two separate windows using the shared mode
 A nine-section registered propagation completed in one window; switching away and
 back preserved that volume and the other window's image preview. Its native saved
 mask covered every requested section, with zero browser errors or failed requests.
+
+The compact SAEM²-SAEvM³ toolbar adds the unregistered **Entire lc** view to those
+five ROIs. Chrome measured a 31 px desktop bar with 12 px controls. Full multiscale
+raw/lc data, the existing neuron meshes and all five native-coordinate boxes rendered
+without loading a whole-volume array. Viewed chunks were copied into the persistent
+local cache. The six-view browser check exercised D/F, status expansion, image
+prediction, nine-section propagation and returning to a retained ROI preview.
+Live messages appeared in the toolbar without duplicate footer messages; browser
+exceptions and failed local requests were zero. Window links retain the toolbar.
+
+Regression coverage verifies physical bounds across different voxel resolutions
+and nonzero offsets, exact segment IDs, overview registration remaining disabled,
+status isolation, concurrent chunk-cache reuse, gzip/CORS/range responses and path
+containment. Cached chunks remain available if the source disappears; uncached
+requests then return an unavailable-source error. These checks establish viewer
+and data-access behavior, not additional segmentation accuracy.
 
 ## SAM2 encoder acceleration
 

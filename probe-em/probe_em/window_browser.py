@@ -18,16 +18,25 @@ def read_windows(path):
         entry = dict(item)
         if not isinstance(entry.get('name'), str) or not entry['name'].strip():
             raise ValueError('Each window needs a nonempty name')
-        if not isinstance(entry.get('seed'), int) or not 0 < entry['seed'] < 2**64:
-            raise ValueError('Each window needs a positive uint64 seed')
-        if not entry.get('local_dir'):
-            raise ValueError('Each window needs a local_dir containing raw and seg')
 
         def local(value):
             source = Path(value)
             return str((path.parent/source).resolve() if not source.is_absolute() else source.resolve())
 
-        entry['local_dir'] = local(entry['local_dir'])
+        kind = entry.setdefault('kind', 'roi')
+        if kind == 'overview':
+            for key in ('raw_path', 'seg_path'):
+                if not entry.get(key):
+                    raise ValueError('An overview needs raw_path and seg_path precomputed directories')
+                entry[key] = local(entry[key])
+        elif kind == 'roi':
+            if type(entry.get('seed')) is not int or not 0 < entry['seed'] < 2**64:
+                raise ValueError('Each ROI needs a positive uint64 seed')
+            if not entry.get('local_dir'):
+                raise ValueError('Each ROI needs a local_dir containing raw and seg')
+            entry['local_dir'] = local(entry['local_dir'])
+        else:
+            raise ValueError('Window kind must be roi or overview')
         if entry.get('align_field'):
             entry['align_field'] = local(entry['align_field'])
         for kind in ('image_layers', 'label_layers'):
@@ -88,8 +97,16 @@ class WindowCollection:
             self.viewers.clear()
         self.executor.shutdown(wait=False, cancel_futures=True)
 
+    def status(self, index):
+        with self.lock:
+            if not 0 <= index < len(self.windows):
+                raise IndexError('Unknown test window')
+            viewer = self.viewers.get(index)
+            feed = getattr(viewer, 'probe_em_toolbar_status', None)
+            return {'index': index, 'messages': feed.snapshot() if feed is not None else []}
 
-def serve_windows(collection, bind='127.0.0.1', port=0):
+
+def serve_windows(collection, bind='127.0.0.1', port=0, volumes=None):
     token = secrets.token_urlsafe(18)
     prefix = '/'+token
     html = Path(__file__).with_name('window_browser.html').read_bytes()
@@ -114,7 +131,15 @@ def serve_windows(collection, bind='127.0.0.1', port=0):
                 self.respond(200, html, 'text/html; charset=utf-8')
             elif path == prefix+'/api/windows':
                 self.respond(200, {'initial_index': collection.initial, 'windows': [
-                    {'index': i, 'name': item['name']} for i, item in enumerate(collection.windows)]})
+                    {'index': i, 'name': item['name'], 'kind': item.get('kind', 'roi')}
+                    for i, item in enumerate(collection.windows)]})
+            elif path.startswith(prefix+'/data/') and volumes is not None:
+                volumes.serve(self, path[len(prefix+'/data/'):])
+            elif path.startswith(prefix+'/api/windows/') and path.endswith('/status'):
+                try:
+                    self.respond(200, collection.status(int(path.split('/')[-2])))
+                except (ValueError, IndexError):
+                    self.respond(404, {'error': 'Unknown test window'})
             elif path.startswith(prefix+'/api/windows/'):
                 try:
                     self.respond(200, collection.request(int(path.rsplit('/', 1)[-1])))
@@ -122,6 +147,16 @@ def serve_windows(collection, bind='127.0.0.1', port=0):
                     self.respond(404, {'error': 'Unknown test window'})
                 except RuntimeError as error:
                     self.respond(503, {'error': str(error)})
+            else:
+                self.respond(404, {'error': 'Not found'})
+
+        def do_OPTIONS(self):
+            if urlsplit(self.path).path.startswith(prefix+'/data/') and volumes is not None:
+                self.send_response(204)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'range')
+                self.end_headers()
             else:
                 self.respond(404, {'error': 'Not found'})
 

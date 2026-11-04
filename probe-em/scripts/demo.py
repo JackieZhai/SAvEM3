@@ -186,8 +186,8 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
         state.selected_layer.layer = 'manual_correction'
 
     def status(message):
-        with viewer.config_state.txn() as state:
-            state.status_messages['probe-em'] = message
+        from probe_em.viewer_status import set_status
+        set_status(viewer, 'probe-em', message)
 
     def mode_status():
         suffix = f"ON (reference z={field.ref_z})" if mode['aligned'] else 'OFF'
