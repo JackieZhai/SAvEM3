@@ -4,6 +4,40 @@ Validated on 2026-09-09 using the same four cached online zebrafish regions.
 Original volumes, fields, trace IDs, and viewer artifacts were retained.
 No volume data was redownloaded and no region was replaced to improve metrics.
 
+## Available method choices (reviewed 2026-11-03)
+
+The comparisons below are controlled ECC/translation-pipeline ablations, not a
+complete translation-versus-rigid-versus-affine-versus-nonrigid benchmark.
+
+| Demo option | Estimator/solver | Validation status |
+| --- | --- | --- |
+| Default `--align-motion translation` | Physical pyramid ECC + robust translation graph | Measured on the four cached ROIs below |
+| `--align-motion euclidean` | Pyramid ECC with rotation/translation, composed as a chain | Experimental; no equivalent four-ROI accuracy comparison |
+| `--align-motion affine` | Pyramid ECC with general affine transforms, composed as a chain | Experimental; no equivalent four-ROI accuracy comparison |
+| `--align-backend sofima` | Robust translation initialization + SOFIMA flow/elastic mesh | Optional, experimental; [four-ROI consistency checks and usage](README_sofima.md) |
+| `--no-align-z` | Unregistered display | Baseline; registration remains on by default |
+
+`--align-field` reuses a selected field and bypasses estimator selection. The
+[interactive demo](README_interactive.md) shares these choices and transforms
+prompts/overlays with the displayed data. Its 2D model inference always uses the
+native raw section, so toggling display registration does not change its inputs.
+
+The SOFIMA option was added on 2026-11-04. It uses a separate worker environment,
+portable nonrigid fields and final adjacent-pair quality guards. The historical
+ECC comparisons below remain unchanged; new SOFIMA results have separate artifacts.
+
+The automatic tracing path's `align_z_motion` still selects the historical ECC
+implementation; it is not equivalent to the demo's robust translation solver.
+The guarded experiments use explicit shared v3.2 fields to keep tracing and
+display consistent. Do not infer tracing accuracy from the display NCC gains.
+
+A broader method comparison should hold all five ROIs and valid support fixed,
+report landmarks/edge correspondence and XZ/YZ drift alongside NCC, record failed
+or inferred sections, and inspect downstream merge/split errors. Phase-only
+translation would be a useful baseline. Nonrigid registration additionally needs
+deformation and topology checks. Neither baseline is exposed as an implemented
+option by this update.
+
 ## Cause
 
 The new demo path applied an inconsistent physical displacement limit, rejecting

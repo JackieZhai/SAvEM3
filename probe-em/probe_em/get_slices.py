@@ -9,6 +9,9 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 import shutil
+import json
+from pathlib import Path
+from probe_em.trace_inputs import nearest_component, prepare_video
 
 
 # ==========================================
@@ -320,7 +323,7 @@ def process_single_connection(seg_vol, raw_vol, conn, output_dir, output_dir3d,
                               initial_radius_nm=4000,
                               max_radius_nm=32100,
                               expansion_factor=2.0,
-                              num_frames=5):
+                              num_frames=5, verification_policy='guarded'):
     try:
         target_id = int(conn['target_id'])
         neighbor_id = int(conn['neighbor_id'])
@@ -391,8 +394,13 @@ def process_single_connection(seg_vol, raw_vol, conn, output_dir, output_dir3d,
         
         # mask_t = get_largest_connected_component_2d(mask_t)
         # mask_n = get_largest_connected_component_2d(mask_n)
-        mask_t = get_center_connected_component_2d(mask_t)
-        mask_n = get_center_connected_component_2d(mask_n)
+        if verification_policy == 'guarded':
+            anchor = np.asarray(conn.get('endpoint_xyz', [cx, cy, cz]))
+            mask_t = nearest_component(mask_t, anchor[:2]-final_box[0][:2])
+            mask_n = nearest_component(mask_n, np.array([cx, cy])-final_box[0][:2])
+        else:
+            mask_t = get_center_connected_component_2d(mask_t)
+            mask_n = get_center_connected_component_2d(mask_n)
 
         
         if not np.any(mask_t) or not np.any(mask_n):
@@ -403,10 +411,18 @@ def process_single_connection(seg_vol, raw_vol, conn, output_dir, output_dir3d,
             #     seg_vol, raw_vol, center, target_id, neighbor_id, r_vox_final,
             #     output_dir3d, base_name
             # )
-            video_res = prepare_sam2_video_region(
-                seg_vol, raw_vol, center, target_id, neighbor_id, r_vox_final,
-                output_dir3d, base_name, num_frames=num_frames
-            )
+            if verification_policy == 'guarded':
+                video_res = prepare_video(seg_vol, raw_vol, center, target_id, neighbor_id,
+                                          r_vox_final, output_dir3d, base_name, num_frames,
+                                          anchor=conn.get('endpoint_xyz'))
+            else:
+                video_res = prepare_sam2_video_region(
+                    seg_vol, raw_vol, center, target_id, neighbor_id, r_vox_final,
+                    output_dir3d, base_name, num_frames=num_frames)
+
+            if video_res['status'] != 'saved':
+                return {'status': 'deferred', 'conn': conn, 'case': base_name,
+                        'reason': video_res.get('reason', video_res.get('msg', 'video_not_saved'))}
 
             return {'status': 'z_gap', 'conn': conn, 'msg': f"Z-Gap: {video_res.get('msg', 'Saved video sequence')}"}
 
@@ -662,7 +678,7 @@ def process_single_connection_multi_slice(seg_vol, raw_vol, conn, output_dir, ou
 
 
 def process_single_connection_wrapper(args):
-    raw_path, seg_path, conn, output_dir, output_dir3d, num_frames, z_field = args
+    raw_path, seg_path, conn, output_dir, output_dir3d, num_frames, z_field, policy = args
 
     seg_vol = CloudVolume(seg_path, mip=0, parallel=False, fill_missing=False, cache=False)
     raw_vol = CloudVolume(raw_path, mip=0, parallel=False, fill_missing=False, cache=False)
@@ -674,13 +690,15 @@ def process_single_connection_wrapper(args):
 
     if not np.array_equal(seg_vol.resolution, raw_vol.resolution):
         raise ValueError('Raw and segmentation voxel resolutions must match')
-    return process_single_connection(seg_vol, raw_vol, conn, output_dir, output_dir3d, num_frames=num_frames)
+    return process_single_connection(seg_vol, raw_vol, conn, output_dir, output_dir3d,
+                                     num_frames=num_frames, verification_policy=policy)
     # return process_single_connection_multi_slice(seg_vol, raw_vol, conn, output_dir, output_dir3d, num_frames=num_frames)
 
 
 
 def get_slices(raw_path, seg_path, connections, output_folder, output_folder3d,
-               max_workers=8, num_frames=5, z_field=None):
+               max_workers=8, num_frames=5, z_field=None, verification_policy='guarded',
+               report_path=None):
     os.makedirs(output_folder, exist_ok=True)
     os.makedirs(output_folder3d, exist_ok=True)
 
@@ -692,12 +710,14 @@ def get_slices(raw_path, seg_path, connections, output_folder, output_folder3d,
 
     tasks = []
     for conn in connections_list:
-        tasks.append((raw_path, seg_path, conn, output_folder, output_folder3d, num_frames, z_field))
+        tasks.append((raw_path, seg_path, conn, output_folder, output_folder3d, num_frames,
+                      z_field, verification_policy))
 
     # print(f"Starting Multi-Processing with {max_workers} workers...")
 
     
     z_gap_connections = []
+    reports = []
 
     
     
@@ -712,6 +732,7 @@ def get_slices(raw_path, seg_path, connections, output_folder, output_folder3d,
                 result = f.result(timeout=120)
 
                 
+                reports.append(result)
                 status = result.get('status')
 
                 if status == 'z_gap':
@@ -723,6 +744,8 @@ def get_slices(raw_path, seg_path, connections, output_folder, output_folder3d,
             except Exception as e:
                 raise RuntimeError(f"Slice preparation failed: {e}") from e
 
+    if report_path is not None:
+        Path(report_path).write_text(json.dumps(reports, indent=2), encoding='utf-8')
     return z_gap_connections
 
 

@@ -1,126 +1,119 @@
-# Validation record
+# Validation and evaluation
 
-Last checked: 2026-09-09. Existing zebrafish caches, registration fields, and tracing
-experiments are retained locally. Publishing the code does not rerun or overwrite them.
-Generated caches, screenshots, machine-specific configurations, and inventory JSON
-are intentionally excluded from Git.
+Last reviewed: 2026-11-04. Generated datasets, local configurations, browser
+automation, screenshots, model execution experiments and detailed machine logs
+are retained outside the published source. Maintained unit and regression tests
+cover implementation contracts and previously observed failures.
 
-## Regression tests
+The publication regression suite passed **144 tests**, with 4 native-package
+skips and 1 third-party deprecation warning. It included the optional real SAM2
+propagation and isolated SOFIMA regressions. English-source and whitespace checks
+passed. Model execution experiments and local sampling records were removed from
+the published tree after being retained in external backups.
 
-The following three environments were checked before publication. Counts include
-shared tests run in different environments; do not add them as unique test cases.
-Real-weight tests used checkpoints already on disk and did not download models.
+## Run the regression suite
 
-| Environment and suite | Result | Coverage |
-| --- | --- | --- |
-| Training: distillation, reproduction, real HQ integration | 12 passed, 7 skipped | Student forward/backward, 1→2 step resume, sliding-window edges, membrane-decoder interface, real HQ mask prompts, batched three-target H5 export |
-| Postprocessing: reproduction | 9 passed, 2 skipped | Native ELF/nifty multicut, WaterZ, boundary/affinity direction, section IDs, large uint64 edge mappings |
-| Probe-EM: tracing, registration, demos, real SAM 2 integration | 32 passed, 2 skipped | PEC voting/stopping, HSS gaps and offsets, ASP uint64 IDs, failure recovery, skeleton export, registration geometry/quality, image prediction and two-frame video memory |
+From the repository root in the installed Probe-EM/training environment:
 
-Skips reflect environment roles: training lacks ELF/SAM 2; postprocessing lacks
-OpenCV; the Probe-EM invocation does not configure HQ integration weights.
-Third-party deprecation/registry warnings remain and are not claimed resolved.
+```bash
+python -m pytest tests/ -q
+python repro/check_english.py
+git diff --check
+```
 
-Real-weight tests use HQ-SAM ViT-B and standard SAM 2 Hiera Tiny on CPU.
-The teacher-export membrane head is randomly initialized for the integration test:
-it validates tensors and files, not meaningful SAEM² predictions. Short student
-training uses synthetic teacher targets and does not establish segmentation accuracy.
+Native ELF/WaterZ tests require the separate postprocessing environment described
+in [repro/env](../repro/env/README.md). Two optional integration regressions use
+local dependencies without downloads:
 
-From the repository root, in the appropriate environments:
+```bash
+PROBE_EM_SAM2_CHECKPOINT=/path/to/sam2_hiera_tiny.pt \
+SAVEM3_SOFIMA_PYTHON=/path/to/sofima-env/bin/python \
+  python -m pytest tests/test_interactive_propagation.py tests/test_sofima_alignment.py -q
+```
 
-~~~bash
-# Training environment:
-SAVEM3_HQ_CHECKPOINT=/absolute/path/to/sam_hq_vit_b.pth \
-  python -m pytest tests/test_distillation.py tests/test_reproduction.py \
-  tests/test_model_integration.py -q
+The SAM2 regression checks bidirectional propagation, cancellation and fresh
+memory on correction runs. The SOFIMA regression checks actual nonzero refinement,
+geometric validity, cache reuse and loading a saved field without its worker.
+For MPS, set `SAVEM3_TEST_DEVICE=mps PYTORCH_ENABLE_MPS_FALLBACK=1`. CUDA is not
+validated by the local runs recorded here.
 
-# Postprocessing environment:
-./repro/env/run_postprocess.sh -m pytest tests/test_reproduction.py -q
+## Interactive Neuroglancer
 
-# Probe-EM environment:
-PROBE_EM_SAM2_CHECKPOINT=/absolute/path/to/sam2_hiera_tiny.pt \
-  python -m pytest tests/test_registration.py tests/test_demo_alignment.py \
-  tests/test_demo_regions.py tests/test_probe_em.py tests/test_model_integration.py -q
-~~~
+The [interactive guide](../probe-em/README_interactive.md) documents section-specific
+points, current-section image prediction, bounded SAM2 propagation and local acceptance.
+Regression coverage includes nonzero volume offsets, exact uint64 IDs, affine and
+nonrigid point/overlay coordinates, stale-client rejection, cancellation, error
+recovery and accepting only results matching their conditioning points.
 
-CloudVolume uses `~/.cloudfiles/locks/` while writing skeleton metadata. Allow the
-library to use its lock directory in restricted environments; do not treat a
-permission failure as a missing skeleton.
+Browser testing exposed two additional navigation issues: picking could snap a
+new point to a neighboring section's annotation, and slice-panel key bindings
+could override viewer actions. P/N now use the current XY section's z, and the
+interactive controls are bound in both relevant input scopes. Relative J/K
+navigation also tolerates pending client updates.
 
-## Neuroglancer and registration
+A real Chrome/WebGL session on cached zebrafish region 1 used SAM2/MPS with the
+SOFIMA field. It predicted sections 13754 and 13755 consecutively without clearing
+points, propagated through 13753-13756 in both z directions, toggled registration,
+inspected an unprompted section and accepted the native four-section mask. There
+were no JavaScript exceptions. Raw imagery, masks and mesh rendering were inspected.
+Defaults remained registration on, `showSlices=false` and near-isotropic meshes.
 
-The four non-overlapping online zebrafish ROIs were downloaded, cached locally,
-traced with actual models under a one-node budget, and checked in Chrome.
-See [DEMO_REGIONS.md](DEMO_REGIONS.md) for the original experiment and
-[the alignment investigation](../probe-em/README_alignment.md) for the optimized comparison.
+The installed legacy SAM2 runtime produced nonfinite video logits with CPU-offloaded
+MPS states. Keeping masks and temporal memory on MPS resolved the observed failure;
+video input frames remain in CPU memory. This is a compatibility result, not a
+segmentation accuracy claim.
 
-The 2026-09-09 optimization uses physical-scale coarse-to-fine estimation and a
-robust adjacent/skip-section graph. On identical valid pixels, it improves the
-four-region mean adjacent-section NCC from approximately 0.285 to 0.388.
-Rejected adjacent edges fall from 150/396 to 4/396. Region 2 at absolute z=14128
-still lacks a reliable observation and is explicitly marked as displacement
-interpolation/extrapolation, not a successfully measured alignment.
+## Local registration
 
-The 29-test tracing/registration/demo subset passes; the three opt-in SAM 2 tests
-bring the Probe-EM environment total to 32. Geometry tests cover XY direction,
-nonzero-origin rotation, expanded bounds, uint64 IDs, skeleton transforms, caching,
-default-on alignment, toggling, and preservation of review sets. Quality tests
-cover physical shifts at different resolutions, bad coarse initialization,
-missing-section bridging/flags, unrelated-image rejection, robust graph outliers,
-invalid parameters, and validated optimized-field selection.
+The [registration investigation](../probe-em/README_alignment.md) preserves controlled
+ECC comparisons. The [SOFIMA guide](../probe-em/README_sofima.md) records the pinned
+upstream source, separate JAX CPU environment, dense-field schema and final quality
+guards. All four 500x500x100 zebrafish ROIs were reused from the original local caches.
 
-All four optimized viewers passed HTTP 200, actual canvas rendering, A off/on
-comparison, and persistence of `showSlices=false`, with no browser runtime
-exceptions or failed requests during the checks. The 3D slice planes are hidden;
-the three 2D panels remain. These are local browser checks, not public hosted demos.
+| Region | ECC mean NCC | ECC + SOFIMA mean NCC | Nonzero elastic sections |
+| --- | ---: | ---: | ---: |
+| 1 | 0.36799 | 0.37014 | 41/100 |
+| 2 | 0.39280 | 0.40036 | 65/100 |
+| 3 | 0.39874 | 0.40029 | 53/100 |
+| 4 | 0.43851 | 0.44085 | 62/100 |
 
-### Original single-ROI reference
+Each comparison uses common valid pixels. Gains are modest and not uniform;
+the worst pair lost 0.00999 NCC. Strength selection itself uses NCC, so these are
+internal consistency checks rather than independent anatomical measurements.
+The final minimum Jacobian was 0.9847, sampled point round-trip error was below
+2.7e-7 voxels, and no label IDs were introduced or lost in these four volumes.
+An initial unguarded trial made region 1 worse, motivating zero-mean residuals,
+explicitly reported inference and final adjacent-pair guards. ECC remains default.
 
-This earlier demo uses an existing real zebrafish cache and prior tracing results,
-not a new SAvEM³ training output.
+## Tracing and reconstruction limits
 
-| Item | Value |
-| --- | --- |
-| Seed | `1486287284` |
-| Trace IDs | `1486284686`, `1486287284`, `1504550065` |
-| Original XYZ shape | `261×357×191` |
-| XYZ resolution | `8×8×30 nm` |
-| Original XYZ voxel offset | `33386,20334,13868` |
-| Layers | raw, input_segments, probe_trace, manual_correction, skeletons |
+The [five-ROI investigation](../probe-em/README_trace_quality.md) and
+[SAEM2 comparison](../probe-em/README_saem2_trial.md) describe measured behavior
+and remaining merge/split errors. Coordinate correctness, finite model outputs,
+NCC gains and successful propagation do not establish complete-neuron accuracy.
+Generic SAM2 weights are not the paper's NeuroSAM2 weights. Historical SAEM2
+checkpoint compatibility does not establish training-data provenance.
 
-The earlier unregistered view passed data/state and HTTP checks. The subsequent
-registered view was also rendered and toggled in Chrome. Its historical field
-uses reference z=13963, expanded XYZ shape `419×474×191`, and offset
-`33308,20290,13868`; all three trace IDs are retained.
+Teacher export, distillation/resume, sliding-window edges, graph-cut interfaces,
+physical coordinate handling and tracing failure/resume states have regression
+coverage. Quantitative reproduction still requires the specified weights, data
+and ground truth. A bounded interactive review does not edit the source instance
+labels or automatically merge/split the reconstruction.
 
-A separate historical automatic-estimation check covered 191 sections and
-rejected 40 adjacent estimates, reusing neighboring transforms and recording those
-fallbacks. Those sections were not claimed successfully registered. Historical
-fields without per-section quality records do not establish universal alignment
-accuracy. Display registration does not rerun PEC/ASP.
+## Dependency and source checks
 
-The [demo guide](../probe-em/scripts/README.md) describes launch commands and
-versioned manual review. Generated viewer URLs require the corresponding Python
-process. `--check` validates data and layer state, not browser rendering.
+The [security report](SECURITY_AUDIT.md) records the Torch 2.14.1 / Torchvision 0.29.1
+upgrade and the affected ranges of the eight reported advisories. Local CPU/MPS
+compatibility was exercised with installed weights. The native postprocessing
+environment passed 11 tests with 2 environment skips in its preceding validation.
+Third-party deprecation warnings remain.
 
-## Source audit and environment limits
+The separate SOFIMA environment passed `pip check`; its advisory scan found zero
+known vulnerabilities among 54 audited distributions. The pinned SOFIMA development
+version was unavailable to that advisory database and was skipped. An advisory
+scan does not constitute an upstream source-code audit.
 
-A local workspace inventory parsed 1,736 Python files at an earlier checkpoint,
-excluding environments, model weights, and volume caches. Semantic review and
-changes concentrated on SAEM²/SAvEM³/Probe-EM, not every line of external baselines.
-The main repository had no Python syntax errors. One unused historical
-AxonEM-wrapper example in a separate checkout had syntax errors and was not rewritten.
-
-The local editable SAM 2 device fixes are outside this Git repository; see the
-[dependency caveat](REPRODUCTION.md#validation-and-external-dependencies).
-The Probe-EM environment upgraded only Kimimaro 5.8.0 to 5.8.4 for the observed
-skeleton coordinate-type conflict; other dependencies were not upgraded.
-
-## Outstanding paper evaluation
-
-Full SAEM² 12 epochs, SAvEM³ 200K iterations, formal ERL/OOD, and manual-time
-evaluation remain outstanding. They require the corresponding data splits,
-trained membrane/NeuroSAM 2 weights, self-supervised encoder initialization, and
-compute resources. Graph cut currently uses local multicut; WaterZ prompting is
-a voxel-interface approximation. Neither is presented as a complete lifted-edge
-experiment or reproduction of the paper's quantitative tables.
+The publishing audit checks tracked and non-ignored new text for Han characters,
+CJK punctuation and encoded Unicode, including hidden files. Chinese originals
+and historical local artifacts remain in external backups. Git history is not
+rewritten by the English-source cleanup.

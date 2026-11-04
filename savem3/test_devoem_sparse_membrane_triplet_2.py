@@ -417,11 +417,11 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--cfg', type=str, default='mem3c2c_3ds_t3t', help='path to config file')
     parser.add_argument('-m', '--mode', type=str, default='train', help='path to config file')
     parser.add_argument('--no-valid', action='store_true',
-                        help='关闭训练中验证/waterz/LMC 后处理（无后处理依赖时使用）')
+                        help='Disable training-time validation and WaterZ/LMC when postprocessing dependencies are unavailable')
     parser.add_argument('--fresh', action='store_true',
-                        help='忽略 config 的 resume/load_path，从头训练')
+                        help='Ignore resume/load_path in the config and train from scratch')
     parser.add_argument('--num-workers', type=int, default=-1,
-                        help='覆盖 TRAIN.num_workers（-1 表示使用 config）')
+                        help='Override TRAIN.num_workers (-1 uses the config value)')
     args = parser.parse_args()
 
     cfg_file = args.cfg + '.yaml'

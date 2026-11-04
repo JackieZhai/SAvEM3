@@ -156,6 +156,9 @@ class ZAffineField:
             c = dict(c)
             p = self.inverse_pts(np.array([[c["x"], c["y"], c["z"]]], dtype=np.float64))[0]
             c["x"], c["y"], c["z"] = float(p[0]), float(p[1]), float(p[2])
+            for key in ('endpoint_xyz', 'centroid_xyz'):
+                if key in c:
+                    c[key] = self.inverse_pts(np.asarray([c[key]], dtype=float))[0].tolist()
             out.append(c)
         return out
 
@@ -196,9 +199,11 @@ class ZAffineField:
 
     @classmethod
     def load(cls, path):
-        d = np.load(path)
-        mats = {int(z): m for z, m in zip(d["zs"].tolist(), d["mats"])}
-        return cls(int(d["z0"]), int(d["z1"]), mats, int(d["ref_z"]), d["window_bbox"])
+        with np.load(path, allow_pickle=False) as d:
+            if 'kind' in d and str(d['kind']) != 'affine':
+                raise ValueError('Non-affine field: use probe_em.alignment_field.load_field in a compatible entry point')
+            mats = {int(z): m for z, m in zip(d["zs"].tolist(), d["mats"])}
+            return cls(int(d["z0"]), int(d["z1"]), mats, int(d["ref_z"]), d["window_bbox"])
 
 
 class AlignedVolume:
@@ -216,7 +221,31 @@ class AlignedVolume:
         self.vol = vol
         self.field = field
         self.resolution = vol.resolution
-        self.bounds = vol.bounds
+        from cloudvolume import Bbox
+        lo, hi = np.asarray(vol.bounds.minpt), np.asarray(vol.bounds.maxpt)
+        from probe_em.alignment_field import ZElasticField
+        if isinstance(field, ZElasticField):
+            if not np.allclose(vol.resolution, field.resolution):
+                raise ValueError('Elastic field resolution does not match the volume')
+            # Nonrigid estimates are valid only inside the fitted ROI.
+            lo = np.maximum(lo, [*field.window_bbox[:2], field.z0])
+            hi = np.minimum(hi, [*field.window_bbox[2:], field.z1+1])
+            if np.any(hi <= lo):
+                raise ValueError('Elastic field and source volume do not overlap')
+            self._elastic_source_bounds = (lo, hi)
+            xy_lo, xy_hi = field.bounds_for_roi(hi-lo, lo)
+            self.bounds = Bbox([*xy_lo, lo[2]], [*xy_hi, hi[2]])
+            self.mip = vol.mip
+            return
+        corners = np.array([[lo[0], lo[1]], [hi[0]-1, lo[1]],
+                            [lo[0], hi[1]-1], [hi[0]-1, hi[1]-1]])
+        mapped = [z for z in field.mats if lo[2] <= z < hi[2]]
+        transformed = [apply_affine_to_points(field.transform(z), corners) for z in mapped]
+        if len(mapped) < int(hi[2]-lo[2]):
+            transformed.append(corners)
+        points = np.concatenate(transformed)
+        self.bounds = Bbox([*np.floor(points.min(axis=0)).astype(int), lo[2]],
+                           [*(np.ceil(points.max(axis=0)).astype(int)+1), hi[2]])
         self.mip = vol.mip
 
     def __getattr__(self, name):
@@ -226,6 +255,16 @@ class AlignedVolume:
         """Fetch box covering the requested aligned box AND its per-slice
         preimages: the warp output grid covers the fetch coordinate range, so
         the fetch must include both [x0,x1]x[y0,y1] and T_z^-1 of it."""
+        if hasattr(self, '_elastic_source_bounds'):
+            # Bound the inverse over the whole displacement grid, not just box
+            # corners: interior nonlinear extrema can change the required fetch.
+            lo, hi = [], []
+            for z in range(z0, z1):
+                index = self.field._section(z)
+                d = self.field.displacement[index].reshape(2, -1)
+                lo.append(np.array([x0, y0])-self.field.shifts[index]-d.max(1))
+                hi.append(np.array([x1-1, y1-1])-self.field.shifts[index]-d.min(1))
+            return np.floor(np.min(lo, axis=0)).astype(int)-2, np.ceil(np.max(hi, axis=0)).astype(int)+2
         corners = np.array(
             [[x0, y0], [x1 - 1, y0], [x0, y1 - 1], [x1 - 1, y1 - 1]],
             dtype=np.float64,
@@ -250,16 +289,34 @@ class AlignedVolume:
         bounds = np.array(self.vol.bounds.maxpt)
         lo = np.maximum(lo, np.asarray(self.vol.bounds.minpt)[:2])
         hi = np.minimum(hi, bounds[:2])
+        if hasattr(self, '_elastic_source_bounds'):
+            lo = np.maximum(lo, self._elastic_source_bounds[0][:2])
+            hi = np.minimum(hi, self._elastic_source_bounds[1][:2])
         if lo[0] >= hi[0] or lo[1] >= hi[1]:
             return np.zeros((x1 - x0, y1 - y0, z1 - z0, 1), dtype=self.vol.dtype)
         data = np.asarray(self.vol[lo[0]:hi[0], lo[1]:hi[1], z0:z1])
         if data.ndim != 4 or data.shape[3] != 1:
             raise ValueError('AlignedVolume expects a single-channel XYZC CloudVolume')
-        data = self.field.align_cutout(data[..., 0], z0,
-                                      seg=self.vol.layer_type == 'segmentation', origin_xy=lo)
-        # crop to the requested output box
-        ox0, oy0 = x0 - lo[0], y0 - lo[1]
-        return data[ox0:ox0 + (x1 - x0), oy0:oy0 + (y1 - y0), :, None]
+        # Warp directly into the requested grid, including content beyond the
+        # original bounds. Cropping a clipped intermediate grid loses labels.
+        output = np.zeros((x1-x0, y1-y0, z1-z0, 1), dtype=data.dtype)
+        source_origin, output_origin = np.eye(3), np.eye(3)
+        source_origin[:2, 2] = lo
+        output_origin[:2, 2] = [-x0, -y0]
+        for index, z in enumerate(range(z0, z1)):
+            if hasattr(self, '_elastic_source_bounds'):
+                output[:, :, index, 0] = self.field.warp_image(
+                    data[:, :, index, 0], z, lo, [x0, y0], (x1-x0, y1-y0),
+                    seg=self.vol.layer_type == 'segmentation')
+                continue
+            matrix = self.field.transform(z)
+            if matrix is None:
+                matrix = np.eye(3)
+            output[:, :, index, 0] = warp_slice(
+                data[:, :, index, 0], output_origin @ matrix @ source_origin,
+                seg=self.vol.layer_type == 'segmentation',
+                output_shape=(x1-x0, y1-y0), border_mode='constant')
+        return output
 
 
 # --------------------------------------------------------------------------

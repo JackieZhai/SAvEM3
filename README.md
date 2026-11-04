@@ -4,7 +4,22 @@ Maintained entry points: [Reproduction workflow and paper differences](docs/REPR
 [SAvEM³ training/inference](repro/savem3/README.md) ·
 [Probe-EM / Neuroglancer demo](probe-em/scripts/README.md).
 
+Local demos default to optional slice registration and near-isotropic mesh generation
+inferred from each dataset's resolution, while retaining native-resolution 2D slices.
+
 See the [validation record](docs/VALIDATION.md) for local tests, demo provenance, and outstanding evaluations.
+The [dependency security report](docs/SECURITY_AUDIT.md) records the Torch 2.14.1
+upgrade, all eight advisory ranges and CPU/MPS validation.
+The [interactive Neuroglancer mode](probe-em/README_interactive.md) supports
+positive/negative points per section, explicit image inference, bounded SAM2
+propagation across sections and reviewed local mask outputs.
+An optional [SOFIMA backend](probe-em/README_sofima.md) adds bounded elastic local
+registration; ECC remains the default and saved dense fields work with interactive prompts.
+
+The [five-ROI tracing investigation](probe-em/README_trace_quality.md) covers
+coordinate/input fixes, guarded verification and remaining model/ground-truth limits.
+The [SAEM2 trial](probe-em/README_saem2_trial.md) additionally compares historical
+ViT-B image predictions and membrane-driven small-slab 3D reconstruction.
 
 The maintained workflow includes three-target teacher export, standalone distillation and resume,
 sliding-window/ROI inference, consistent postprocessing and graph-cut interfaces, explicit Probe-EM
@@ -52,10 +67,11 @@ Official code repository for the BIBM 2024 paper:
 ### Training environment
 
 ```bash
-python -m venv .venvs/savem3
+python3.12 -m venv .venvs/savem3
 source .venvs/savem3/bin/activate
-pip install torch torchvision   # or install the CUDA build for your server
+pip install torch==2.14.1 torchvision==0.29.1  # select an official CUDA index on GPU servers
 pip install -r requirements-train.txt
+pip check
 ```
 
 On Apple Silicon, use the MPS wrapper:
@@ -74,7 +90,7 @@ cd savem3
 
 ### Probe-EM environment
 
-Probe-EM uses Python 3.10 + SAM 2 and is installed separately:
+Probe-EM uses Python 3.10+ (3.12 recommended) + SAM 2 and is installed separately:
 
 ```bash
 cd probe-em

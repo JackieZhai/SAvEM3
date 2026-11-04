@@ -200,7 +200,8 @@ def calculate_overlap_ratio(pred_mask, target_gt_mask):
 
 def process_pair(predictor, raw_path, mask_path, overlay_path, output_dir,
                  total_trials=5, min_pass_trials=4, need_negative=True,
-                 max_score_threshold=0.5, min_score_threshold=0.1):
+                 max_score_threshold=0.5, min_score_threshold=0.1,
+                 verification_policy='paper'):
     
     filename = os.path.basename(raw_path)
     base_name = filename.replace('_raw.jpg', '')
@@ -240,6 +241,7 @@ def process_pair(predictor, raw_path, mask_path, overlay_path, output_dir,
     fail_count = 0
     run_count = 0
     scores_history = []
+    trial_evidence = []
 
     
     max_allowed_fails = total_trials - min_pass_trials
@@ -316,7 +318,19 @@ def process_pair(predictor, raw_path, mask_path, overlay_path, output_dir,
         current_min_score = min(score_1_to_2, score_2_to_1)
         scores_history.append(current_max_score)
 
-        if (current_max_score > max_score_threshold) and (current_min_score > min_score_threshold):
+        paper_pass = (current_max_score > max_score_threshold) and (current_min_score > min_score_threshold)
+        identity = []
+        for predicted, source in ((sam_mask_1, mask1), (sam_mask_2, mask2)):
+            predicted = np.zeros_like(source) if predicted is None else np.asarray(predicted).squeeze() > 0
+            identity.append({'source_coverage': float(np.count_nonzero(predicted & source)/max(1, source.sum())),
+                             'pair_precision': float(np.count_nonzero(predicted & (mask1 | mask2))/max(1, predicted.sum()))})
+        guarded_pass = paper_pass and all(row['source_coverage'] >= .5 and row['pair_precision'] >= .5
+                                         for row in identity)
+        trial_evidence.append({'forward_coverage': float(score_1_to_2),
+                               'reverse_coverage': float(score_2_to_1),
+                               'identity': identity, 'paper_pass': bool(paper_pass),
+                               'guarded_pass': bool(guarded_pass)})
+        if guarded_pass if verification_policy == 'guarded' else paper_pass:
             pass_count += 1
         else:
             fail_count += 1
@@ -399,13 +413,16 @@ def process_pair(predictor, raw_path, mask_path, overlay_path, output_dir,
         "target_id": id1,
         "neighbor_id": int(id2),
         "avg_score": np.mean(scores_history) if scores_history else 0.0,
-        "is_connected": int(is_connected)
+        "is_connected": int(is_connected),
+        "case_name": base_name,
+        "trials": trial_evidence,
+        "reason": 'consensus' if is_connected else 'insufficient_consensus',
     }
 
 
 def find_merge_candidates(checkpoint, model_cfg, input_dir, output_dir, save_temp=False, device=None,
                           max_score_threshold=0.5, min_score_threshold=0.1, predictor=None,
-                          strict=True):
+                          strict=True, verification_policy='guarded'):
     os.makedirs(output_dir, exist_ok=True)
 
     raw_files = sorted(glob.glob(os.path.join(input_dir, "*_raw.jpg")))
@@ -423,6 +440,7 @@ def find_merge_candidates(checkpoint, model_cfg, input_dir, output_dir, save_tem
 
     
     connected_neighbors = set()
+    evidence = []
 
     
     with torch.inference_mode(), inference_autocast(device):
@@ -435,7 +453,11 @@ def find_merge_candidates(checkpoint, model_cfg, input_dir, output_dir, save_tem
                 res = process_pair(predictor, raw_path, mask_path, overlay_path, output_dir, total_trials=5,
                                    min_pass_trials=4, need_negative=False,
                                    max_score_threshold=max_score_threshold,
-                                   min_score_threshold=min_score_threshold)
+                                   min_score_threshold=min_score_threshold,
+                                   verification_policy=verification_policy)
+
+                evidence.append(res if res is not None else {'case_name': os.path.basename(raw_path),
+                                'is_connected': 0, 'reason': 'empty_or_extreme_area_ratio'})
 
                 if res and res['is_connected']:
                     
@@ -447,6 +469,9 @@ def find_merge_candidates(checkpoint, model_cfg, input_dir, output_dir, save_tem
                 if strict:
                     raise
 
+    import json
+    with open(os.path.join(output_dir, 'connection_results.json'), 'w', encoding='utf-8') as stream:
+        json.dump(evidence, stream, indent=2)
     if os.path.exists(input_dir) and (save_temp == 0):
         shutil.rmtree(input_dir)
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 为 SAEM² 训练准备 SAM/HQ-SAM 预训练权重符号链接。
-# 权重不入 git；先把权重放到本仓库 sam-hq/pretrained_checkpoint/。
+# Create SAM/HQ-SAM pretrained-weight symlinks for SAEM² training.
+# Weights are not tracked in Git; place them in sam-hq/pretrained_checkpoint/ first.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SRC="$ROOT/sam-hq/pretrained_checkpoint"
@@ -13,6 +13,6 @@ for name in sam_vit_h_4b8939.pth sam_vit_h_maskdecoder.pth \
         ln -sfn "../../sam-hq/pretrained_checkpoint/$name" "$DST/$name"
         echo "link $name"
     else
-        echo "skip $name（未找到 $SRC/$name）" >&2
+        echo "skip $name (not found: $SRC/$name)" >&2
     fi
 done

@@ -1,6 +1,23 @@
 # Probe-EM tracing and demonstration scripts
 
+For the optional SAEM2 checkpoint experiment, see the
+[paired image and bounded 3D trial](../README_saem2_trial.md). It uses separate
+outputs and does not replace Probe-EM's SAM2 video backend.
+
+For tracing errors in the five cached examples, start with
+[guarded tracing and the quality audit](../README_trace_quality.md).
+`audit_trace_quality.py` prepares separate experiments, reruns actual verification,
+summarizes decision changes, and serves baseline/guarded/uncertain layers with
+the same registration field. Existing display-only demos remain available below.
+
 ## Local Neuroglancer demo
+
+For point-based model interaction, use `demo.py --interactive` and see the
+[interactive guide](../README_interactive.md): P/N adds positive/negative points,
+I predicts the current section, B/E selects an inclusive z range, V runs SAM2
+propagation, X stops, and Y accepts a reviewed image or volume. J/K changes
+sections while retaining each section's points. This mode can start without
+completed trace results and shares the registration and mesh settings below.
 
 Activate your Probe-EM/SAM 2 Python environment and run commands in `probe-em/`
 unless noted otherwise. Cached volumes, checkpoints, and trace results are local
@@ -39,8 +56,11 @@ planes in Neuroglancer settings if needed; A toggles do not reset that choice.
 Enable and select `manual_correction` to edit its segment set with Neuroglancer's
 selection tools. A synchronously switches raw, all segmentation layers, skeletons,
 and the viewing position between original and registered coordinates; review IDs
-remain unchanged. Q restores the automatic trace set. G saves a new JSON version
-under `demo_reviews/`.
+remain unchanged. Q restores the manual layer's automatic starting set. G saves
+a new JSON version under `demo_reviews/`. Reference trace/comparison layers
+disable spatial picking so double-clicking the data does not alter their ID sets;
+sidebar selections are still editable. R restores these reference sets without
+changing manual review. Hover highlighting is off in trace/review/comparison layers.
 
 Review files record the seed, full uint64 IDs as strings, sources, resolution,
 offset, timestamp, and current registration state. Saving changes neither input
@@ -57,6 +77,63 @@ python scripts/demo.py --local-dir volumes_local --results-dir trace_results \
 rendering. The default ROI limit is 128M voxels; larger inputs require an explicit
 `--max-voxels` override.
 
+## Near-isotropic meshes (default for every dataset)
+
+Mesh generation has its own resolution; raw imagery, 2D segmentation slices,
+tracing, registration estimation, and skeleton coordinates retain their original
+resolution. The default policy takes the coarsest native axis as a target and
+rounds each target/native ratio to the nearest power of two in log scale, with
+a minimum factor of 1. It never upsamples an axis and does not hard-code XY=4.
+
+| Native XYZ resolution (nm) | Mesh downsampling XYZ | Actual mesh resolution (nm) |
+| --- | --- | --- |
+| 8, 8, 30 | 4, 4, 1 | 32, 32, 30 |
+| 4, 4, 40 | 8, 8, 1 | 32, 32, 40 |
+| 40, 8, 8 | 1, 4, 4 | 40, 32, 32 |
+| 8, 8, 8 | 1, 1, 1 | 8, 8, 8 |
+
+`--mesh-isotropic` is on by default in `demo.py`, `demo_regions.py serve`, and
+the local mesh paths of `open_trace_viewer.py`. Use `--no-mesh-isotropic` for native
+meshes or `--mesh-target-nm 64` for an explicit physical target. The latter is an
+approximate target because factors remain powers of two; native coarser axes are
+not upsampled. Registration and mesh policy are independent switches.
+
+~~~bash
+python scripts/demo_regions.py serve --open
+python scripts/demo_regions.py serve --no-mesh-isotropic --open
+python scripts/demo.py --local-dir volumes_local --results-dir trace_results \
+  --seed 1486287284 --mesh-target-nm 64
+~~~
+
+`probe_em/meshes.py::MeshVolume` serves original label chunks but delegates mesh
+requests to a separate nearest-neighbor-strided label volume. It does not linearly
+interpolate IDs. Coarse mesh vertices are in physical units relative to the same
+ROI origin. The original source transform retains the exact voxel offset, even
+when registered offsets are not divisible by the mesh factors. Original and
+registered meshes use separate fingerprints and switch together on A.
+
+Entire labels lost in the coarse grid fall back to native meshing on request, with
+an explicit per-ID record. Degenerate grids or empty coarse meshes also fall back.
+This prevents a missing object from silently disappearing; it does not preserve
+every thin branch or topology of a surviving label. Coarse surfaces approximate
+the segmentation and are not a new, more accurate segmentation result.
+Uniform ROIs without an internal label interface produce an explicitly empty
+mesh record; their 2D slices remain available rather than aborting viewer startup.
+
+The generic demo caches meshes in `OUTPUT/meshes/`; four-region demos use
+`region_N/mesh_cache/`. Each fingerprint records segmentation SHA-256, shape,
+dtype, native resolution/offset, mesh factors, algorithm version, Neuroglancer
+version, and simplification options. Per-ID `.bin`/`.json` files contain geometry,
+checksums, effective resolution, and fallback status. Traced IDs are precomputed
+for both display spaces; other selected IDs are generated lazily and cached.
+After editing an in-memory label array, call `invalidate()` before reusing its source.
+
+Neuroglancer's `LocalVolume.downsampling` alone does not change its mesh input;
+see the [upstream implementation](https://github.com/google/neuroglancer/blob/master/python/neuroglancer/local_volume.py).
+Existing remote precomputed meshes are already generated on their server and are
+not remeshed by this policy. The legacy remote verification tool continues to use
+them; export/cache an ROI and open the generic local demo to use the new policy.
+
 ## Local registration options
 
 | Option | Behavior |
@@ -64,6 +141,8 @@ rendering. The default ROI limit is 128M voxels; larger inputs require an explic
 | `--align-z` | Enabled by default; may be omitted |
 | `--no-align-z` | Skip estimation and registered-volume construction entirely |
 | `--align-field FILE.npz` | Reuse an explicit field covering every ROI section |
+| `--align-backend ecc\|sofima` | ECC by default; optional SOFIMA flow/elastic mesh with translation initialization |
+| `--sofima-python PATH`, `--sofima-config FILE.json` | Isolated SOFIMA interpreter and optional physical/quality settings |
 | `--align-motion translation` | Default automatic motion model; euclidean/affine are also available experimentally |
 | `--align-reference-z Z` | Absolute voxel reference z for estimation; defaults to the middle ROI section |
 | `--align-max-shift-nm 800` | Automatic physical displacement limit in nm, independent of mip |
@@ -103,6 +182,9 @@ from nearby observations, not measured, and no missing image content is synthesi
 Estimation fails explicitly if no reliable component exists. Historical v2 fields
 retain their original fallback interpretation: reuse of a neighboring transform.
 See the [alignment investigation](../README_alignment.md).
+See the [SOFIMA guide](../README_sofima.md) for its isolated installation, dense field
+format, interactive integration and reproducible `compare_alignment.py` benchmark.
+`sofima_worker.py` is the internal numeric-NPZ/JSON subprocess entry point.
 
 This is display registration. It does not rerun PEC/ASP, alter raw data, or change
 existing tracing decisions. The tracer's `align_z` configuration is separate and
@@ -146,7 +228,8 @@ After closing a demo, rerun only `serve --open`; new URLs are generated without
 downloading or retracing.
 
 If `alignment_optimized/report.json` is validated and matches the raw checksum,
-`serve` selects its field by default and writes `viewer_optimized/`. Original
+`serve` selects its field by default and writes `viewer_optimized_mesh_isotropic/`.
+Native-mesh comparisons use a separate `_mesh_native/` directory. Original
 `alignment/`, `viewer/`, and `trace_results/` remain intact. The comparison holds
 trace IDs fixed and records when display and trace fields differ. All services bind
 to loopback and require their Python process to remain alive.
@@ -161,7 +244,8 @@ The default region directory is `demo_session_regions/region_N/`:
 | `alignment/` | Prepared field, cache metadata, and rejected adjacent pairs |
 | `trace_config.json`, `trace_results/` | Configuration, status, accepted IDs, pending queue, PEC/ASP visual evidence |
 | `validation.json` | Cache/ID audit and intensity NCC sanity check, not annotated accuracy |
-| `viewer/`, `viewer_optimized/`, `reviews/` | Original/optimized viewer state, reports, versioned review |
+| `viewer/`, `viewer_optimized/`, `viewer*_mesh_isotropic/`, `viewer*_mesh_native/`, `reviews/` | Preserved historical views, new mesh-policy views, versioned review |
+| `mesh_cache/` | Content-addressed physical-space meshes, per-ID checksums, and fallback records |
 | `alignment_investigation/`, `alignment_optimized/` | Candidate fields, validated new fields, common-support NCC, real XZ comparison figures |
 
 Cache export is checked by exact voxel readback. Missing remote chunks raise
@@ -191,6 +275,11 @@ incomplete experiment without `--resume`. Serving rejects failed tracing results
 The generic Tiny checkpoint demonstrates the data/software path, not paper
 NeuroSAM 2 accuracy. Registration failures remain explicit in reports and viewer
 status; an NCC increase is not proof of anatomical alignment. Press A to inspect.
+
+Current viewer URLs are in `viewers.json`, with policy-specific copies in
+`viewers_mesh_isotropic.json` or `viewers_mesh_native.json`. The index from before
+the mesh update is preserved in `viewers_before_mesh_update.json`; old services
+are not stopped by launching the new ones.
 
 ## New SAvEM³ segmentation results
 

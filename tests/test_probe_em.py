@@ -60,8 +60,12 @@ def test_trace_failure_is_not_success_and_can_resume(tmp_path, monkeypatch):
     runner = script('run_probe_em')
     config = dict(runner.DEFAULT_CONFIG, output_root=str(tmp_path), device='cpu',
                   max_workers=1, checkpoint_sam='unused-in-mocked-verification', debug_limit=0)
+    candidate_reads = {2: 0}
     def endpoints(label, *args):
         if label == 2:
+            candidate_reads[2] += 1
+        # Candidate QC succeeds; its later expansion hits a transient read error.
+        if label == 2 and candidate_reads[2] > 1:
             raise RuntimeError('simulated missing skeleton')
         return np.ones((1, 3)), np.ones((1, 3)), np.array([8, 8, 30]), 100
     monkeypatch.setattr(runner, 'get_endpoints_vectors_precomputed', endpoints)

@@ -14,6 +14,11 @@ from tqdm import tqdm
 import shutil
 import warnings
 import pandas as pd
+import json
+import hashlib
+from pathlib import Path
+from probe_em.trace_verification import occupancy_evidence, cycle_overlap
+from probe_em.trace_inputs import nearest_component
 
 from probe_em.device import resolve_device, inference_autocast, sam2_config_name
 
@@ -80,7 +85,8 @@ def calculate_collision(pred_mask, seg_npy, target_id, min_pixels=50, coverage_t
 # ==========================================
 
 # ==========================================
-def process_single_video_folder_collision(folder_path, predictor, output_root):
+def process_single_video_folder_collision(folder_path, predictor, output_root,
+                                         allowed_ids=None, verification_policy='guarded'):
     base_name = os.path.basename(folder_path)
 
     
@@ -116,6 +122,7 @@ def process_single_video_folder_collision(folder_path, predictor, output_root):
 
     
     found_connections = {}  # {id: max_score}
+    frame_labels = {}
 
     
     frame_files = sorted([f for f in os.listdir(video_dir) if f.endswith(".jpg")])
@@ -137,6 +144,7 @@ def process_single_video_folder_collision(folder_path, predictor, output_root):
 
         if os.path.exists(seg_npy_path):
             seg_npy = np.load(seg_npy_path)  # uint64 array
+            frame_labels[out_frame_idx] = seg_npy
 
             
             collisions = calculate_collision(pred_mask, seg_npy, target_id)
@@ -152,7 +160,7 @@ def process_single_video_folder_collision(folder_path, predictor, output_root):
     plt.figure(figsize=(4 * num_frames, 5))
     ids_str = ", ".join([str(k) for k in list(found_connections.keys())[:3]])  
     if len(found_connections) > 3: ids_str += "..."
-    plt.suptitle(f"{base_name} | Found: {ids_str if ids_str else 'None'}", fontsize=12)
+    plt.suptitle(f"{base_name} | Forward collisions (not accepted joins): {ids_str or 'None'}", fontsize=12)
 
     for i in range(num_frames):
         ax = plt.subplot(1, num_frames, i + 1)
@@ -174,14 +182,39 @@ def process_single_video_folder_collision(folder_path, predictor, output_root):
     plt.close()
 
     
-    result_list = []
-    for uid, score in found_connections.items():
-        result_list.append({
-            'target_id': target_id,
-            'neighbor_id': int(uid),
-            'score': score,
-            'case_name': base_name
-        })
+    if allowed_ids is None:
+        allowed_ids = [int(base_name.split('_')[1])]
+    result_list = occupancy_evidence(video_segments, frame_labels, target_id,
+                                     allowed_ids, verification_policy)
+    for item in result_list:
+        item.update(target_id=target_id, case_name=base_name)
+        if verification_policy == 'guarded' and item['is_connected']:
+            # Reverse from the actual candidate, not the forward SAM mask, to
+            # test whether its identity returns to the original source.
+            best = max((row for row in item['frames'] if row['frame'] in item['supported_frames']),
+                       key=lambda row: row['coverage']*row['precision'])['frame']
+            candidate = frame_labels[best] == item['neighbor_id']
+            points = np.column_stack(np.where(candidate & video_segments[best]))
+            point = points[len(points)//2][::-1]
+            candidate = nearest_component(candidate, point)
+            predictor.reset_state(inference_state)
+            predictor.add_new_mask(inference_state=inference_state, frame_idx=best,
+                                   obj_id=1, mask=candidate)
+            returned = None
+            for frame, _, logits in predictor.propagate_in_video(
+                    inference_state, start_frame_idx=best, max_frame_num_to_track=best+1, reverse=True):
+                if frame == 0:
+                    returned = (logits[0] > 0).cpu().numpy().squeeze()
+            cycle = cycle_overlap(returned, prompt_bool) if returned is not None else {'coverage': 0., 'iou': 0.}
+            item['cycle'] = cycle
+            if cycle['coverage'] < .5 or cycle['iou'] < .3:
+                item['is_connected'] = 0
+                item['reasons'].append('failed_reverse_identity')
+    # Preserve machine-readable evidence even when scratch inputs are removed.
+    Path(output_root, base_name+'_evidence.json').write_text(
+        json.dumps(result_list, indent=2), encoding='utf-8')
+    np.savez_compressed(Path(output_root, base_name+'_masks.npz'),
+                        **{f'frame_{int(i)}': mask for i, mask in video_segments.items()}, prompt=prompt_bool)
 
     return result_list
 
@@ -190,7 +223,8 @@ def process_single_video_folder_collision(folder_path, predictor, output_root):
 
 # ==========================================
 def find_merge_candidates_3d_region(checkpoint, model_cfg, input_dir, output_dir, save_temp=False,
-                                    device=None, predictor=None, strict=True):
+                                    device=None, predictor=None, strict=True,
+                                    allowed_ids=None, verification_policy='guarded'):
     os.makedirs(output_dir, exist_ok=True)
 
     subfolders = sorted(path for path in glob.glob(os.path.join(input_dir, '*')) if os.path.isdir(path))
@@ -211,17 +245,34 @@ def find_merge_candidates_3d_region(checkpoint, model_cfg, input_dir, output_dir
     all_logs = []
     connected_neighbors = set()
 
+    inference_cache = {}
     with torch.inference_mode(), inference_autocast(device):
         for folder in tqdm(subfolders, desc="SAM2 3D Collision"):
             try:
                 
-                connections = process_single_video_folder_collision(folder, sam2_predictor, output_dir)
+                digest = hashlib.sha256()
+                for path in sorted(Path(folder).rglob('*')):
+                    if path.suffix in ('.jpg', '.png', '.npy'):
+                        digest.update(path.relative_to(folder).as_posix().encode())
+                        digest.update(path.read_bytes())
+                key = digest.hexdigest()
+                if allowed_ids is None:
+                    # The standalone API defaults to the nominated candidate;
+                    # cases with different nominations must not share decisions.
+                    key += ':'+Path(folder).name.split('_')[1]
+                if key in inference_cache:
+                    connections = [dict(row, case_name=Path(folder).name,
+                                         reused_from=row['case_name']) for row in inference_cache[key]]
+                else:
+                    connections = process_single_video_folder_collision(
+                        folder, sam2_predictor, output_dir, allowed_ids, verification_policy)
+                    inference_cache[key] = connections
 
                 
                 for item in connections:
                     all_logs.append(item)
                     
-                    if item['score'] > 0.6:
+                    if item['is_connected']:
                         connected_neighbors.add(item['neighbor_id'])
 
             except Exception as e:

@@ -80,3 +80,18 @@ python savem3/gen_ablation_cfg.py
 - `savem3/precompute_teacher.py` supports `--max-slices N` for partial export.
 - On mac arm64, nifty `accumulateAffinityStandartFeatures` can trigger a vigra histogram
   assertion; the LMC scripts fall back to boundary features automatically.
+
+## English-only publishing check
+
+Keep comments, docstrings, CLI messages, documentation and metadata in English.
+Preserve original-language backups outside Git. From the repository root, run:
+
+```bash
+python repro/check_english.py
+python -m pytest -q tests/test_repository_language.py
+```
+
+The check includes tracked files and non-ignored new files, including hidden files,
+Unicode escapes and numeric HTML entities. It excludes ignored data/environments,
+local backups, binary assets and historical Git objects. It detects Han characters
+and CJK/fullwidth punctuation; it does not infer the language of arbitrary prose.

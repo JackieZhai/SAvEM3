@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# 安装 SAvEM3 后处理环境（waterz + elf/多割 + 官方 ERL 依赖）到本机。
+# Install local SAvEM3 postprocessing dependencies: WaterZ, ELF/multicut, and official ERL.
 #
-# 背景：
-#   - waterz 来自 https://github.com/funkey/waterz（JIT 编译需要 boost 头文件与 C++ SDK）
-#   - elf 来自 https://github.com/constantinpape/elf tag 0.5.0
-#     （elf master 要求 Python>=3.10 与 bioimage-cpp）
-#   - nifty/vigra/affogato 来自 conda-forge（elf 的运行时依赖）
-#   - 官方 ERL 实现已 clone 到 ../evaluate/AxonEM-challenge
+# Background:
+#   - WaterZ: https://github.com/funkey/waterz (JIT needs Boost headers and a C++ SDK).
+#   - ELF: https://github.com/constantinpape/elf at tag 0.5.0.
+#     ELF master requires Python>=3.10 and bioimage-cpp.
+#   - nifty/vigra/affogato: conda-forge packages required by ELF at runtime.
+#   - The official ERL implementation is vendored in ../evaluate/AxonEM-challenge.
 #
-# 本机 Homebrew/用户缓存不可写，所以 conda 使用 HOME=/tmp/condahome 与独立 PKGS 目录。
+# This legacy setup uses a temporary home and a separate package cache for conda
+# because the original machine's Homebrew/user caches were not writable.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -17,17 +18,17 @@ CACHE_HOME=/tmp/condahome
 PKGS="$ROOT/.cache/conda-pkgs"
 mkdir -p "$CACHE_HOME" "$PKGS" "$ROOT/.cache/witty"
 
-echo "==> [1/3] conda 环境（Python 3.9 + nifty/vigra/affogato/libboost 头文件）"
-# 注意：不要装 `boost` 元包，它会把 nifty/vigra 拉低到旧版，导致
-# accumulateAffinityStandartFeatures 在 mac arm64 上触发 vigra histogram 断言。
+echo "==> [1/3] Conda environment (Python 3.9 + nifty/vigra/affogato/libboost headers)"
+# Avoid the `boost` metapackage: it can downgrade nifty/vigra and trigger a vigra
+# histogram assertion in accumulateAffinityStandartFeatures on macOS ARM64.
 HOME="$CACHE_HOME" CONDA_PKGS_DIRS="$PKGS" conda create -y \
     -p "$POST" -c conda-forge \
     python=3.9 pip nifty vigra affogato libboost-headers libboost-devel
 
-echo "==> [2/3] elf 0.5.0（constantinpape/elf GitHub tag 0.5.0；master 需 Python>=3.10）"
+echo "==> [2/3] ELF 0.5.0 (constantinpape/elf GitHub tag; master requires Python>=3.10)"
 HOME="$CACHE_HOME" "$POST/bin/pip" install 'git+https://github.com/constantinpape/elf.git@0.5.0' 
 
-echo "==> [3/3] waterz（funkey/waterz GitHub 版，Apple Silicon 需显式 SDK/boost include）"
+echo "==> [3/3] WaterZ (funkey/waterz; Apple Silicon needs explicit SDK/Boost include paths)"
 SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
 HOME="$CACHE_HOME" SDKROOT="$SDKROOT" \
 CXXFLAGS="-isysroot $SDKROOT -isystem $SDKROOT/usr/include/c++/v1 -I$POST/include" \
@@ -36,15 +37,15 @@ LDFLAGS="-L$POST/lib -lc++" \
 
 HOME="$CACHE_HOME" "$POST/bin/pip" install h5py imageio kimimaro
 
-echo "==> [3.5/3] 官方 ERL 仓库（若尚未 clone）"
+echo "==> [3.5/3] Official ERL repository (clone if missing)"
 EVAL_DIR="$ROOT/repro/evaluate"
 if [ ! -f "$EVAL_DIR/AxonEM-challenge/erl_wrapper/eval_erl.py" ]; then
     git clone --depth 1 https://github.com/PytorchConnectomics/AxonEM-challenge.git "$EVAL_DIR/AxonEM-challenge"
 else
-    echo "已包含：$EVAL_DIR/AxonEM-challenge"
+    echo "Already available: $EVAL_DIR/AxonEM-challenge"
 fi
 
-echo "==> 校验"
+echo "==> Validate the installation"
 HOME="$CACHE_HOME" SDKROOT="$SDKROOT" \
 CXXFLAGS="-isysroot $SDKROOT -isystem $SDKROOT/usr/include/c++/v1 -I$POST/include" \
 LDFLAGS="-L$POST/lib -lc++" \
@@ -63,4 +64,4 @@ costs = mc.transform_probabilities_to_costs(feats.compute_boundary_features(rag,
 seg = feats.project_node_labels_to_pixels(rag, mc.multicut_kernighan_lin(rag, costs))
 print('elf multicut OK', seg.shape, len(np.unique(seg)))
 PY
-echo "完成。运行后处理脚本请使用：$ROOT/SAvEM3/repro/env/run_postprocess.sh"
+echo "Done. Run postprocessing scripts with: $ROOT/SAvEM3/repro/env/run_postprocess.sh"

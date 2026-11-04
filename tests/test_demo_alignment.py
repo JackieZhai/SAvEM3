@@ -105,6 +105,9 @@ def test_viewer_alignment_defaults_on_and_toggle_preserves_review(tmp_path, monk
     original_state = viewer.state.to_json()
     assert original_state['showSlices'] is False
     assert report['show_slices'] is False
+    assert report['meshes']['policy'] == 'near_isotropic'
+    np.testing.assert_allclose(report['meshes']['registered']['mesh_resolution_xyz_nm'], [32, 32, 30])
+    np.testing.assert_allclose(report['meshes']['original']['native_resolution_xyz_nm'], [8, 8, 30])
     position = np.array(viewer.state.position)
     viewer.actions.invoke('toggle-alignment', {})
     assert 'Local alignment: OFF' in viewer.config_state.state.status_messages['probe-em']
@@ -118,10 +121,14 @@ def test_viewer_alignment_defaults_on_and_toggle_preserves_review(tmp_path, monk
     assert viewer.state.to_json()['layers'][0]['source'] == original_state['layers'][0]['source']
     assert list(viewer.state.layers['manual_correction'].segments) == [label]
     assert viewer.state.show_slices is False
+    assert 'Mesh grid: 32x32x30 nm' in viewer.config_state.state.status_messages['probe-em']
 
     monkeypatch.setattr('probe_em.demo_alignment.prepare_field', lambda *a, **k: pytest.fail('Disabled alignment was executed'))
-    disabled, report = demo.build_viewer(tmp_path, [label], label, tmp_path / 'reviews', align_z=False)
+    disabled, report = demo.build_viewer(tmp_path, [label], label, tmp_path / 'reviews',
+                                       align_z=False, mesh_isotropic=False)
     assert report['alignment']['enabled'] is False
+    assert report['meshes']['policy'] == 'native'
+    assert report['meshes']['original']['downsample_xyz'] == [1, 1, 1]
     assert disabled.state.to_json()['showSlices'] is False
     disabled.actions.invoke('toggle-alignment', {})
     assert 'disabled at startup' in disabled.config_state.state.status_messages['probe-em']

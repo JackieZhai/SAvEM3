@@ -1,20 +1,21 @@
-"""M6 · 大体积稀疏评测指标：Expected Run Length（ERL，januszewski2018high）。
+"""M6: a z-path approximation related to Expected Run Length (ERL).
 
-论文 §3："We adopt an established metric for long-range connectivity analysis:
+Paper section 3: "We adopt an established metric for long-range connectivity analysis:
 the expected running length (ERL)."
 
-实现（沿 GT 神经元的中心线路径评测）：
-1. 输入：gt_path 为 GT 神经元的二值掩码 h5（或标签 h5 + --neuron-id 提取）；
-   pred_seg 为预测实例分割 h5；
-2. 沿 GT 掩码的 z 方向主路径，逐体素检查预测段是否与 GT 相同实例（追踪一致性）；
-3. ERL = 沿路径"预测正确连续段"长度的期望（以体素/物理长度计），
-   即每次预测在相邻正确体素间断裂时重置游程，输出平均游程长度。
+Implementation (sample a path through a ground-truth neuron):
+1. Read a binary GT mask H5, or extract --neuron-id from a label H5, together with
+   a predicted instance segmentation H5.
+2. Sample predicted segment IDs at the GT mask's median coordinates per z section.
+3. Measure consecutive nonzero, unchanged IDs along this path and report the mean
+   run length in sections and physical units.
 
-注：官方 ERL 定义基于 skeleton 站点游程统计；本实现采用体素级 z-主路径近似，
-复现时请与 januszewski2018high 的 J0126 工具核对换算（site 级）。
+This is not the official skeleton-based ERL statistic (januszewski2018high).
+It is a voxel-level z-path approximation; compare units and site definitions with
+the official J0126 tools before using it in a reproduction.
 
-用法：
-    python erl.py --gt-path neuron_gt.h5 --pred-seg seg_waterz_t0.5.hdf \
+Usage:
+    python erl_approx.py --gt-path neuron_gt.h5 --pred-seg seg_waterz_t0.5.hdf \
         [--neuron-id 2252715458] [--resolution 8,8,33]
 """
 import argparse
@@ -29,8 +30,8 @@ def load_h5(path):
 
 
 def erl_voxel_path(gt_bin, seg, resolution):
-    """沿 GT 掩码 z 向主路径计算体素级 ERL（返回平均正确游程，物理长度 nm）。"""
-    # 每片取 GT 掩码质心作为路径点
+    """Return the mean consistent z-path run length in sections and nanometers."""
+    # Use the per-axis median of each GT section as the path point.
     zs = np.nonzero(gt_bin.any(axis=(1, 2)))[0]
     path = []
     for z in zs:
@@ -39,7 +40,7 @@ def erl_voxel_path(gt_bin, seg, resolution):
     if not path:
         return 0.0, 0
 
-    # 预测段 ID 序列
+    # Predicted segment IDs along the sampled path.
     seg_ids = np.array([seg[z, y, x] for z, y, x in path], dtype=np.int64)
     runs, run_len = [], 0
     prev_id = seg_ids[0]
@@ -57,17 +58,17 @@ def erl_voxel_path(gt_bin, seg, resolution):
         runs.append(run_len)
     if not runs:
         return 0.0, 0
-    zr = resolution[2]  # nm/片
+    zr = resolution[2]  # nm per section
     return float(np.mean(runs)), float(np.mean(runs)) * zr
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--gt-path', required=True, help='GT 掩码或标签 h5')
+    ap.add_argument('--gt-path', required=True, help='Ground-truth mask or label H5')
     ap.add_argument('--pred-seg', required=True)
     ap.add_argument('--neuron-id', type=int, default=None,
-                    help='gt-path 是标签图时提取该实例；否则按二值掩码处理')
-    ap.add_argument('--resolution', type=str, default='8,8,33', help='nm/体素（z 用第 3 项）')
+                    help='Extract this instance from GT labels; otherwise treat GT as a binary mask')
+    ap.add_argument('--resolution', type=str, default='8,8,33', help='nm per voxel (the third value is z)')
     args = ap.parse_args()
 
     gt = load_h5(args.gt_path)
@@ -79,9 +80,9 @@ def main():
     res = [float(x) for x in args.resolution.split(',')]
 
     mean_vox, mean_nm = erl_voxel_path(gt_bin, seg, res)
-    print(f'ERL = {mean_vox:.1f} 片 ≈ {mean_nm / 1000:.2f} µm（z 向路径近似）')
-    print('注：论文 H01 #2252715458 ERL=12267（SAvEM³）/ 10184（Superhuman），'
-          '单位与 site 定义请对照官方工具校准。')
+    print(f'ERL = {mean_vox:.1f} sections, approximately {mean_nm / 1000:.2f} µm (z-path approximation)')
+    print('Note: the paper reports H01 #2252715458 ERL=12267 (SAvEM³) / 10184 (Superhuman). '
+          'Calibrate units and site definitions against the official tools.')
 
 
 if __name__ == '__main__':

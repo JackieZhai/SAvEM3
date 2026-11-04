@@ -1,17 +1,19 @@
-"""MPS 适配 · 定点补丁（配合 sitecustomize.py 使用）。
+"""Targeted MPS compatibility patches, used together with sitecustomize.py.
 
-修复三类 sitecustomize 覆盖不到的问题（保留 .orig 备份，幂等）：
-1. 显式 `device = torch.device('cuda:0')` → MPS/CUDA/CPU 自动选择；
+Handle issues that sitecustomize cannot intercept. Keep .orig backups and make
+patching idempotent:
+1. Replace explicit `device = torch.device('cuda:0')` with MPS/CUDA/CPU selection.
 2. `if torch.cuda.is_available() is False: raise AttributeError('No GPU available')`
-   → 允许 MPS；
-3. PyTorch 0.4 旧 API：`param.data.add(alpha, param.data)`（新 torch 已移除该签名）
-   → `param.data.mul_(1 - wd*lr)`；`np.bool` → `bool`。
+   is relaxed to allow MPS.
+3. Replace the removed PyTorch 0.4 `param.data.add(alpha, param.data)` signature
+   with `param.data.mul_(1 - wd*lr)`, and replace `np.bool` with `bool`.
 
-目标目录：
-  - savem3/（蒸馏训练主脚本）
-  - saem2/（SAEM² 训练脚本，只做旧 API 修复；.cuda() 由 sitecustomize 覆盖）
+Target directories:
+  - savem3/: main distillation training scripts.
+  - saem2/: SAEM² training scripts; patch legacy APIs, with .cuda() handled by
+    sitecustomize.
 
-用法：python patch_mps.py [--check]
+Usage: python patch_mps.py [--check]
 """
 import argparse
 import os
@@ -52,14 +54,14 @@ def patch_file(path, check_only):
     if hits == 0:
         return
     if check_only:
-        print(f'  [将改动] {os.path.relpath(path, REPO_ROOT)}：{hits} 处')
+        print(f'  [would patch] {os.path.relpath(path, REPO_ROOT)}: {hits} matches')
         return
     bak = path + '.orig'
     if not os.path.exists(bak):
         shutil.copy2(path, bak)
     with open(path, 'w') as f:
         f.write(new)
-    print(f'  [已修复] {os.path.relpath(path, REPO_ROOT)}：{hits} 处（备份 .orig）')
+    print(f'  [patched] {os.path.relpath(path, REPO_ROOT)}: {hits} matches (.orig backup)')
 
 
 def main():
@@ -69,7 +71,7 @@ def main():
 
     for target in TARGETS:
         if not os.path.isdir(target):
-            print(f'[跳过] {target}', file=sys.stderr)
+            print(f'[skip] {target}', file=sys.stderr)
             continue
         for dirpath, _, files in os.walk(target):
             if '__pycache__' in dirpath:

@@ -1,4 +1,5 @@
 import argparse
+import os
 from pathlib import Path
 
 import h5py
@@ -24,7 +25,7 @@ def test_original_student_forward_backward_resume_inference(tmp_path):
     bundle = tmp_path / 'teacher.h5'
     teacher_bundle(bundle)
     args = argparse.Namespace(teacher=str(bundle), output=str(tmp_path / 'run'), seed=42,
-             device='cpu', steps=1, batch=1, patch=[2, 16, 16], lr=1e-4, ablation='full',
+             device=os.environ.get('SAVEM3_TEST_DEVICE', 'cpu'), steps=1, batch=1, patch=[2, 16, 16], lr=1e-4, ablation='full',
              resume=None, init_encoder=None, secondary_weight=0.0, epsilon=0.1,
              log_every=1, save_every=1)
     train(args)
@@ -35,11 +36,11 @@ def test_original_student_forward_backward_resume_inference(tmp_path):
     train(args)
     checkpoint = torch.load(args.resume, weights_only=False)
     assert checkpoint['step'] == 2
-    model = build_student()
+    model = build_student().to(args.device)
     model.load_state_dict(checkpoint['model'])
     # Odd shape and a volume smaller than a tile exercise padding and final tiles.
     raw = np.full((1, 19, 17), 127, np.uint8)
-    prediction = predict_volume(model, raw, [2, 16, 16], [1, 8, 8], 'cpu')
+    prediction = predict_volume(model, raw, [2, 16, 16], [1, 8, 8], args.device)
     assert prediction.shape == raw.shape
     assert np.isfinite(prediction).all() and 0 <= prediction.min() <= prediction.max() <= 1
 

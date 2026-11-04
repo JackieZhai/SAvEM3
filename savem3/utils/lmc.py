@@ -19,8 +19,8 @@ def mc_baseline(affs, fragments=None):
     try:
         costs = feats.compute_affinity_features(rag, affs, offsets)[:, 0]
     except RuntimeError:
-        # mac arm64 + conda nifty/vigra 组合下 accumulateAffinityStandartFeatures
-        # 会触发 vigra UserRangeHistogram 断言；退回边界均值特征。
+        # On macOS ARM64 with conda nifty/vigra, accumulateAffinityStandartFeatures
+        # can trigger a vigra UserRangeHistogram assertion; use mean boundary features.
         costs = feats.compute_boundary_features(rag, boundary_input)[:, 0]
     edge_sizes = feats.compute_boundary_mean_and_length(rag, boundary_input)[:, 1]
     costs = mc.transform_probabilities_to_costs(costs, edge_sizes=edge_sizes)
@@ -44,8 +44,8 @@ def multicut_multi(affs, offsets=[[-1, 0, 0], [0, -1, 0], [0, 0, -1]], fragments
     try:
         costs = feats.compute_affinity_features(rag, affs, offsets)[:, 0]
     except RuntimeError:
-        # mac arm64 + conda nifty/vigra 组合下 accumulateAffinityStandartFeatures
-        # 会触发 vigra UserRangeHistogram 断言；退回边界均值特征。
+        # On macOS ARM64 with conda nifty/vigra, accumulateAffinityStandartFeatures
+        # can trigger a vigra UserRangeHistogram assertion; use mean boundary features.
         costs = feats.compute_boundary_features(rag, boundary_input)[:, 0]
     edge_sizes = feats.compute_boundary_mean_and_length(rag, boundary_input)[:, 1]
     costs = mc.transform_probabilities_to_costs(costs, edge_sizes=edge_sizes)

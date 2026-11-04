@@ -20,6 +20,13 @@ and center-cropped 1024² field of view.
 - `json2d_create.py`: membrane TIFF -> connected-component labels -> `record2d` JSON.
 - `utils/dataloader_isbi_2d_v4.py`: dataloader for precomputed embeddings.
 - `segment_anything_training/`: SAM/HQ-SAM model code used by the training scripts.
+- `predictor.py`: strict trained-decoder loading and native-grid image inference;
+  not a SAM2 video predictor.
+- `membrane.py`: naive threshold-component diagnostic, not the recommended 3D path.
+
+The [five-ROI SAEM2 trial](../probe-em/README_saem2_trial.md) compares historical
+ViT-B weights with HQ-SAM/SAM2, then tests membrane-driven bounded 3D multicut.
+Checkpoint training provenance and biological accuracy remain unverified.
 
 ## Setup
 

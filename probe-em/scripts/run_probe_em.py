@@ -27,6 +27,7 @@ from probe_em.find_merge_candidates import find_merge_candidates
 from probe_em.device import resolve_device
 from probe_em.runtime import PredictorCache
 from probe_em.find_merge_candidates_3d_region import find_merge_candidates_3d_region
+from probe_em.topology import candidate_topology
 
 DEFAULT_CONFIG = {
     "raw_path": "/path/to/raw/precomputed",
@@ -47,6 +48,8 @@ DEFAULT_CONFIG = {
     "seed_list_file": None,
     "resume": False,
     "random_seed": 42,
+    "verification_policy": "guarded",  # paper | guarded (generic-model safeguards)
+    "keep_inputs": False,
     # Optional z-axis affine alignment (see probe_em/z_align.py):
     # register every z-slice of the trace region to a reference slice (ECC),
     # trace in the aligned space, then map coordinate outputs back.
@@ -93,6 +96,8 @@ def validate_config(config):
             raise ValueError(f'{key} must be a positive integer')
     if config['target_mip'] < 0 or config['debug_limit'] is not None and config['debug_limit'] < 0:
         raise ValueError('target_mip/debug_limit must be nonnegative')
+    if config.get('verification_policy', 'guarded') not in ('paper', 'guarded'):
+        raise ValueError('verification_policy must be paper or guarded')
 
 
 def load_seed_ids(config):
@@ -123,7 +128,8 @@ class NeuronTracer:
                  align_z=False, align_z_margin_xy=256, align_z_margin_z=64,
                  align_z_estimation_mip=1, align_z_motion="translation",
                  align_z_field=None, align_z_max_z=400,
-                 output_root="trace_results", random_seed=42):
+                 output_root="trace_results", random_seed=42,
+                 verification_policy='guarded', keep_inputs=False):
         self.raw_path = raw_path
         self.seg_path = seg_path
         self.sam_checkpoint = sam_checkpoint
@@ -133,6 +139,9 @@ class NeuronTracer:
         self.predictors = PredictorCache(sam_checkpoint, sam_cfg, self.device)
         self.random_seed = int(random_seed)
         self.errors = []
+        self.verification_policy = verification_policy
+        self.keep_inputs = keep_inputs
+        self.node_audit = []
 
         self.voxel_threshold = voxel_threshold
         self.sam2_num_frames = sam2_num_frames
@@ -159,11 +168,14 @@ class NeuronTracer:
 
     def _build_z_field(self, seed_id):
         """Load or estimate the per-z-slice affine field around the seed."""
-        from probe_em.z_align import ZAffineField, estimate_z_affine_field
+        from probe_em.z_align import estimate_z_affine_field
+        from probe_em.alignment_field import load_field
 
         if self.align_z_field_path and os.path.exists(self.align_z_field_path):
             print(f"[align-z] loading field from {self.align_z_field_path}")
-            return ZAffineField.load(self.align_z_field_path)
+            return load_field(self.align_z_field_path)
+        if self.align_z_field_path:
+            raise FileNotFoundError(self.align_z_field_path)
 
         # seed skeleton bbox (vertices are absolute nm -> mip0 voxels)
         seg_vol = CloudVolume(self.seg_path, mip=2, parallel=False, fill_missing=True)
@@ -215,7 +227,8 @@ class NeuronTracer:
                     os.makedirs(self.output_root, exist_ok=True)
                     save_path = os.path.join(self.output_root,
                                              f"align_z_field_seed{seed_id}.npz")
-                self.z_field.save(save_path)
+                if not os.path.exists(save_path):
+                    self.z_field.save(save_path)
                 self.z_field_saved_path = save_path
                 print(f"[align-z] field saved to {save_path}")
         return self.z_field
@@ -230,6 +243,7 @@ class NeuronTracer:
         self.all_merged_ids = set()
         self.voxel_counts = {}
         self.errors = []
+        self.node_audit = []
         self.z_field = None
         print("NeuronTracer state has been reset.")
 
@@ -240,6 +254,8 @@ class NeuronTracer:
         state_path = Path(save_path) / 'trace_state.json'
         if resume and state_path.is_file():
             state = json.loads(state_path.read_text())
+            audit_path = Path(save_path) / 'node_audit.json'
+            self.node_audit = json.loads(audit_path.read_text()) if audit_path.is_file() else []
             if int(state['seed']) != seed_id:
                 raise ValueError('Resume state seed does not match')
             self.stack = [int(value) for value in state['pending']]
@@ -257,6 +273,25 @@ class NeuronTracer:
             self.stack.append(seed_id)
             self.all_merged_ids.add(seed_id)
             self.graph.add_node(seed_id)
+
+        if resume and self.verification_policy == 'guarded':
+            # Older checkpoints could contain accepted-but-unexpanded complex
+            # segments. Validate them before publishing another bounded prefix.
+            audit = [candidate_topology(uid, target_mip, self.seg_path,
+                                        reader=get_endpoints_vectors_precomputed)
+                     for uid in sorted(self.all_merged_ids) if uid != seed_id]
+            rejected = [int(row['segment']) for row in audit if row['rejected']]
+            self.graph.remove_nodes_from(rejected)
+            reachable = nx.descendants(self.graph, seed_id) | {seed_id}
+            self.graph.remove_nodes_from(set(self.graph) - reachable)
+            self.all_merged_ids.intersection_update(reachable)
+            self.stack = [uid for uid in self.stack if uid in reachable]
+            atomic_json(Path(save_path) / 'resumed_topology.json', audit)
+            atomic_json(state_path, {'schema_version': 1, 'seed': str(seed_id),
+                'pending': [str(value) for value in self.stack],
+                'visited': [str(value) for value in sorted(self.visited)],
+                'accepted': [str(value) for value in sorted(self.all_merged_ids)],
+                'edges': [[str(u), str(v)] for u, v in self.graph.edges], 'errors': self.errors})
 
         z_field = self._ensure_z_field(seed_id)
 
@@ -297,7 +332,13 @@ class NeuronTracer:
                 # print(f"Voxel count: {voxel_count}")
                 self.voxel_counts[current_id] = int(voxel_count)
 
-                if (current_id != seed_id) and is_messy_segment(endpoints, res,max_endpoints=40):
+                # A few endpoints in a small ROI give high endpoint density even
+                # for a valid neurite. Keep them; density pruning needs enough tips.
+                messy = is_messy_segment(endpoints, res, max_endpoints=40)
+                prune = messy and (self.verification_policy == 'paper' or len(endpoints) > 15)
+                self.node_audit.append({'segment': str(current_id), 'endpoint_count': len(endpoints),
+                                        'density_warning': bool(messy), 'pruned': bool(prune and current_id != seed_id)})
+                if (current_id != seed_id) and prune:
                     # print("Pruned segment; downstream tracing skipped.")
                     if current_id in self.all_merged_ids:
                         self.all_merged_ids.remove(current_id)
@@ -333,7 +374,9 @@ class NeuronTracer:
                 z_gap_conns = get_slices(
                     self.raw_path, self.seg_path, connections, temp_slice_dir,
                     temp_slice3d_dir, max_workers=self.slice_workers,
-                    num_frames=self.sam2_num_frames, z_field=z_field
+                    num_frames=self.sam2_num_frames, z_field=z_field,
+                    verification_policy=self.verification_policy,
+                    report_path=os.path.join(temp_vis_dir, 'preparation.json')
                 )
                 if z_field is not None:
                     z_gap_conns = z_field.inverse_connections(z_gap_conns)
@@ -341,14 +384,22 @@ class NeuronTracer:
                 
                 merged_candidates = find_merge_candidates(
                     self.sam_checkpoint, self.sam_cfg,
-                    temp_slice_dir, temp_vis_dir, save_temp=False,
-                    device=self.device, predictor=self.predictors.image
+                    temp_slice_dir, temp_vis_dir, save_temp=self.keep_inputs,
+                    device=self.device, predictor=self.predictors.image,
+                    verification_policy=self.verification_policy
                 )
                 merged_candidates_3d = find_merge_candidates_3d_region(
                     self.sam_checkpoint, self.sam_cfg,
-                    temp_slice3d_dir, temp_vis3d_dir, save_temp=False,
-                    device=self.device, predictor=self.predictors.video
+                    temp_slice3d_dir, temp_vis3d_dir, save_temp=self.keep_inputs,
+                    device=self.device, predictor=self.predictors.video,
+                    allowed_ids={int(conn['neighbor_id']) for conn in connections},
+                    verification_policy=self.verification_policy
                 )
+                atomic_json(Path(save_path) / f'verification_{current_id}.json',
+                            {'source': str(current_id), 'policy': self.verification_policy,
+                             'hss': connections, 'pec_accepted': [str(i) for i in merged_candidates],
+                             'asp_accepted': [str(i) for i in merged_candidates_3d],
+                             'coordinate_space': 'aligned' if z_field is not None else 'original'})
                 merged_candidates = list(set(merged_candidates).union(merged_candidates_3d))
                 # print(f"SAM 2 verified connections: {merged_candidates}")
 
@@ -360,6 +411,12 @@ class NeuronTracer:
                         continue
                     if child_id <= 0:
                         continue
+                    if self.verification_policy == 'guarded' and child_id not in self.all_merged_ids:
+                        qc = candidate_topology(child_id, target_mip, self.seg_path,
+                                                reader=get_endpoints_vectors_precomputed)
+                        self.node_audit[-1].setdefault('candidate_topology', []).append(qc)
+                        if qc['rejected']:
+                            continue
                     if child_id in self.visited and child_id not in self.all_merged_ids:
                         continue
                     
@@ -371,10 +428,21 @@ class NeuronTracer:
                         self.stack.append(child_id)
                         # print(f"Added to stack: {child_id}")
 
+                atomic_json(Path(save_path) / f'topology_{current_id}.json',
+                            self.node_audit[-1].get('candidate_topology', []))
+
+            except (KeyboardInterrupt, SystemExit):
+                # An interrupted node is not completed. Retry it on resume,
+                # including when interruption occurred inside model inference.
+                self.visited.discard(current_id)
+                if current_id not in self.stack:
+                    self.stack.append(current_id)
+                raise
             except Exception as e:
                 print(f"Error while processing seed {seed_id}, ID {current_id}: {e}")
                 self.errors.append({'segment': str(current_id), 'error': str(e)})
             finally:
+                atomic_json(Path(save_path) / 'node_audit.json', self.node_audit)
                 atomic_json(state_path, {'schema_version': 1, 'seed': str(seed_id),
                     'pending': [str(value) for value in self.stack],
                     'visited': [str(value) for value in sorted(self.visited)],
@@ -425,6 +493,16 @@ def run_one_seed(seed_id, config):
     
     signature_config = {key: value for key, value in config.items()
                         if key not in ('resume', 'debug_limit', 'max_workers', 'seed_ids', 'seed_list_file')}
+    signature_config['tracer_revision'] = 'guarded-tracing-v1'
+    signature_config['verification_policy'] = config.get('verification_policy', 'guarded')
+    for key in ('align_z_field', 'checkpoint_sam'):
+        path = config.get(key)
+        if path and Path(path).is_file():
+            with open(path, 'rb') as stream:
+                digest = hashlib.sha256()
+                for block in iter(lambda: stream.read(1024*1024), b''):
+                    digest.update(block)
+            signature_config[key+'_sha256'] = digest.hexdigest()
     signature = hashlib.sha256(json.dumps(signature_config, sort_keys=True).encode()).hexdigest()
     status_path = Path(save_path) / 'status.json'
     if os.path.exists(save_path):
@@ -436,6 +514,7 @@ def run_one_seed(seed_id, config):
         if not config.get('resume'):
             raise FileExistsError(f'Incomplete run at {save_path}; use --resume or a new output_root')
     atomic_json(status_path, {'status': 'running', 'config_hash': signature, 'seed': str(seed_id)})
+    atomic_json(Path(save_path) / 'run_manifest.json', signature_config)
 
     tracer = NeuronTracer(
         config['raw_path'], config['seg_path'], 
@@ -455,6 +534,8 @@ def run_one_seed(seed_id, config):
         align_z_max_z=config.get('align_z_max_z', 400),
         output_root=config.get('output_root', 'trace_results'),
         random_seed=config.get('random_seed', 42),
+        verification_policy=config.get('verification_policy', 'guarded'),
+        keep_inputs=config.get('keep_inputs', False),
     )
     
     try:
@@ -464,6 +545,12 @@ def run_one_seed(seed_id, config):
         atomic_json(status_path, {'status': status, 'config_hash': signature, 'seed': str(seed_id),
                     'accepted_count': len(final_ids), 'pending_count': len(tracer.stack), 'errors': tracer.errors})
         return seed_id, status
+    except (KeyboardInterrupt, SystemExit):
+        tracer.save_results(seed_id, save_path)
+        atomic_json(status_path, {'status': 'limited', 'config_hash': signature, 'seed': str(seed_id),
+                                 'interrupted': True, 'pending_count': len(tracer.stack),
+                                 'accepted_count': len(tracer.all_merged_ids), 'errors': tracer.errors})
+        raise
     except Exception as e:
         print(f"Seed {seed_id} failed: {e}")
         atomic_json(status_path, {'status': 'failed', 'config_hash': signature, 'seed': str(seed_id), 'error': str(e)})

@@ -22,3 +22,9 @@ The launcher uses batch 8, 12 epochs, and learning rate 1e-3, and forwards addit
 CLI arguments. Supply an explicit train/validation split: the default reuse of
 training records is not independent validation. `patch_paths.py` is a historical
 migration helper, not a script to repeatedly run during normal training.
+
+`postprocess_trial.py` runs the existing slice-watershed/local-3D-multicut backend
+on cached SAEM2 membrane trial inputs. It imports no SAM2/training code and does
+not use old segmentation labels to construct its graph. See the
+[bounded five-ROI experiment](../../probe-em/README_saem2_trial.md) for commands,
+checkpoint provenance, comparison viewers and limitations.

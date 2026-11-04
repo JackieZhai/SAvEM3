@@ -5,13 +5,14 @@ networkx
 neuroglancer==2.41.2
 numba==0.62.1
 numpy
-opencv-python
+opencv-python-headless>=4.9
 openpyxl
 pandas
 pillow
 scipy
 tifffile
-torch==2.6.0
-torchvision==0.21.0
-torchaudio==2.6.0
+# Keep this tested pair synchronized with requirements-train.txt.
+# Torchaudio is not used by Probe-EM or SAM 2 and is intentionally omitted.
+torch==2.14.1
+torchvision==0.29.1
 tqdm

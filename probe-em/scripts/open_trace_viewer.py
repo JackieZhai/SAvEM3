@@ -39,6 +39,7 @@ from cloudvolume import CloudVolume
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+from probe_em.meshes import MeshVolume
 
 RAW_URL = "precomputed://https://ng.zebrafish.digital-brain.cn/srv/raw/"
 SEG_URL = "precomputed://https://ng.zebrafish.digital-brain.cn/srv/merge_neuro_label/"
@@ -147,7 +148,7 @@ def load_skeleton_cache(path, traced_ids):
     return skels
 
 
-def load_local_layer(path):
+def load_local_layer(path, **mesh_options):
     """Load a local file:// precomputed volume as a Neuroglancer LocalVolume.
 
     The backup keeps the original voxel_offset, so coordinates stay aligned
@@ -158,10 +159,12 @@ def load_local_layer(path):
     data = np.asarray(vol[vol.bounds]).squeeze()
     print(f"[info] loaded local layer {path}: {data.shape} {data.dtype} "
           f"offset={vol.voxel_offset}")
-    return neuroglancer.LocalVolume(
+    volume_class = MeshVolume if vol.info['type'] == 'segmentation' else neuroglancer.LocalVolume
+    return volume_class(
         data,
         dimensions=DIMENSIONS,
         voxel_offset=[int(v) for v in vol.voxel_offset],
+        **(mesh_options if volume_class is MeshVolume else {}),
     )
 
 
@@ -424,7 +427,13 @@ def main():
     parser.add_argument("--padding", type=int, default=24, help="mip0 voxels around traced bbox")
     parser.add_argument("--no-browser", action="store_true", help="do not open a browser tab")
     parser.add_argument("--dry-run", action="store_true", help="build layers and print state, no server")
+    parser.add_argument('--mesh-isotropic', action=argparse.BooleanOptionalAction, default=True,
+                        help='Near-isotropic local meshes (default on); remote precomputed meshes are unchanged')
+    parser.add_argument('--mesh-target-nm', type=float, help='Optional physical mesh target in nm')
+    parser.add_argument('--mesh-cache', default='demo_session_trace_meshes/meshes')
     args = parser.parse_args()
+    mesh_options = dict(mesh_isotropic=args.mesh_isotropic, mesh_target_nm=args.mesh_target_nm,
+                        mesh_cache=args.mesh_cache)
 
     results_dir = args.results_dir
     result_folder = os.path.join(results_dir, f"{args.seed}_results_sam")
@@ -450,7 +459,7 @@ def main():
             )
         print(f"[info] using local backup volumes from: {os.path.abspath(local_dir)}")
         raw_src = load_local_layer(raw_path)
-        seg_src = load_local_layer(seg_path)
+        seg_src = load_local_layer(seg_path, **mesh_options)
 
         skel_cache = os.path.join(local_dir, "traced_skeletons.json")
         if os.path.exists(skel_cache):
@@ -478,8 +487,10 @@ def main():
                 seg_vol0, skels, contacts, traced_ids, args.padding
             )
     elif args.align_field:
-        from probe_em.z_align import ZAffineField
-        field = ZAffineField.load(args.align_field)
+        from probe_em.alignment_field import ZElasticField, load_field
+        field = load_field(args.align_field)
+        if isinstance(field, ZElasticField) and not np.allclose(field.resolution, MIP0_RES):
+            raise SystemExit('This historical viewer assumes 8x8x30 nm. Use demo.py for other resolutions.')
         print(f"[info] ALIGNED-space viewer — field z [{field.z0}, {field.z1}], "
               f"ref z={field.ref_z}; layers will be warped into the reference frame")
         coord_map = field.forward_pts
@@ -518,8 +529,8 @@ def main():
                                traced_ids, args.padding)
         raw_src = neuroglancer.LocalVolume(
             raw_data, dimensions=DIMENSIONS, voxel_offset=[int(v) for v in offset])
-        seg_src = neuroglancer.LocalVolume(
-            seg_data, dimensions=DIMENSIONS, voxel_offset=[int(v) for v in offset])
+        seg_src = MeshVolume(
+            seg_data, dimensions=DIMENSIONS, voxel_offset=[int(v) for v in offset], **mesh_options)
 
         try:
             save_aligned_volumes(local_dir.rstrip("/") + "_aligned",
@@ -580,10 +591,11 @@ def main():
                     "n_vox": int(len(idx)),
                 }
 
-    traced_vol = neuroglancer.LocalVolume(
+    traced_vol = MeshVolume(
         traced_data,
         dimensions=DIMENSIONS,
         voxel_offset=[int(v) for v in offset],
+        **mesh_options,
     )
 
     if args.dry_run:

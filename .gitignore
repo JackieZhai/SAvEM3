@@ -200,3 +200,6 @@ temp_vis_*/
 docs/workspace_inventory.json
 local_backups/
 .venvs/
+probe-em/demo_session_saem2*/
+repro/record2d_train_local.json
+repro/sampling_manifest_local.json

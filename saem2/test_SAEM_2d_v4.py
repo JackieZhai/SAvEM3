@@ -371,10 +371,10 @@ class ListContainer:
             datasets_dict_saved = copy.deepcopy(datasets_dict)
             datase_name = datasets_dict_saved['dataset_name']
 
-            # 生成相同的随机索引列表
+            # Generate a shared list of random indices.
             random_indices = random.sample(range(len(datasets_dict_saved['part'])), self.sample_select[datase_name])
 
-            # 使用随机索引重新排列两个列表
+            # Reorder both lists using the same random indices.
             datasets_dict_saved['part'] = [datasets_dict_saved['part'][i] for i in random_indices]
             datasets_dict_saved['layer'] = [datasets_dict_saved['layer'][i] for i in random_indices]
             datasets_dict_saved['label'] = [datasets_dict_saved['label'][i] for i in random_indices]
@@ -412,10 +412,10 @@ class ValListContainer:
             datasets_dict_saved = copy.deepcopy(datasets_dict)
             datase_name = datasets_dict_saved['dataset_name']
 
-            # 生成相同的随机索引列表
+            # Generate a shared list of random indices.
             random_indices = random.sample(range(len(datasets_dict_saved['part'])), self.sample_select[datase_name])
 
-            # 使用随机索引重新排列两个列表
+            # Reorder both lists using the same random indices.
             datasets_dict_saved['part'] = [datasets_dict_saved['part'][i] for i in random_indices]
             datasets_dict_saved['layer'] = [datasets_dict_saved['layer'][i] for i in random_indices]
             datasets_dict_saved['label'] = [datasets_dict_saved['label'][i] for i in random_indices]

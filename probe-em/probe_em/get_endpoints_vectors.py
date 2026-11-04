@@ -110,7 +110,7 @@ def get_endpoints_and_vectors(skel, resolution, lookback_dist_nm=600):
     count = len(tip_indices)
     if count == 0:
         print("Warning: no endpoints were found.")
-        return np.array([]), np.array([])
+        return np.empty((0, 3)), np.empty((0, 3))
 
     tips_vox_list = []
     tips_vec_list = []
@@ -132,7 +132,8 @@ def get_endpoints_and_vectors(skel, resolution, lookback_dist_nm=600):
 
         
         
-        max_steps = 10
+        # Follow physical cable length, not an arbitrary number of dense edges.
+        max_steps = len(vertices)
         steps = 0
 
         while path_dist < lookback_dist_nm and steps < max_steps:

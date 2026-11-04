@@ -7,7 +7,11 @@ from typing import List, Tuple
 import torch
 from torch import nn
 from torch.nn import functional as F
-from segment_anything_training.modeling import TwoWayTransformer, MaskDecoder
+if __package__:
+    from .segment_anything_training.modeling import TwoWayTransformer, MaskDecoder
+else:
+    # Preserve imports from the original scripts launched inside saem2/.
+    from segment_anything_training.modeling import TwoWayTransformer, MaskDecoder
 
 class LayerNorm2d(nn.Module):
     def __init__(self, num_channels: int, eps: float = 1e-6) -> None:

@@ -277,7 +277,9 @@ def display_alignment(directory, metadata, legacy=False):
     return metadata['alignment'], False
 
 
-def serve(root, regions, align_z=True, open_browser=False, port=0, legacy_alignment=False):
+def serve(root, regions, align_z=True, open_browser=False, port=0, legacy_alignment=False,
+          mesh_isotropic=True, mesh_target_nm=None, align_backend='ecc',
+          sofima_python=None, sofima_options=None):
     import neuroglancer
     from demo import build_viewer, read_trace_ids
     neuroglancer.set_server_bind_address(bind_address='127.0.0.1', bind_port=port)
@@ -294,11 +296,18 @@ def serve(root, regions, align_z=True, open_browser=False, port=0, legacy_alignm
             raise ValueError(f'Refusing to display a failed/incomplete test as valid: {result_folder}')
         viewer, report = build_viewer(directory / 'cache', ids, seed, directory / 'reviews',
                                      align_z=align_z,
-                                     align_field=selected_alignment['field_path'] if align_z else None)
+                                     align_field=selected_alignment['field_path'] if align_z and align_backend == 'ecc' else None,
+                                     align_cache=directory/'alignment_sofima' if align_backend == 'sofima' else None,
+                                     align_backend=align_backend, sofima_python=sofima_python, sofima_options=sofima_options,
+                                     mesh_isotropic=mesh_isotropic, mesh_target_nm=mesh_target_nm,
+                                     mesh_cache=directory / 'mesh_cache')
+        if align_backend == 'sofima':
+            selected_alignment, optimized = report['alignment'], False
+        display_version = 'sofima' if align_backend == 'sofima' else ('optimized' if optimized else 'original')
         report.update(region=region, trace_status=trace_status, sources=metadata['sources'],
                       trace_alignment_enabled=config['align_z'], node_limit_per_run=config['debug_limit'],
                       trace_alignment_field=config['align_z_field'],
-                      display_registration_version='optimized' if optimized else 'original',
+                      display_registration_version=display_version,
                       trace_decisions_recomputed=False,
                       scope='ROI-limited short-run demo, not a complete neuron')
         url = viewer.get_viewer_url()
@@ -306,12 +315,14 @@ def serve(root, regions, align_z=True, open_browser=False, port=0, legacy_alignm
         with viewer.config_state.txn() as state:
             state.status_messages['region'] = (f'{region["name"]}: online zebrafish ROI cached locally; '
                                                f'trace status={trace_status["status"]}; ROI-limited test. '
-                                               f'Display registration: {"v3" if optimized else "original"}; '
-                                               f'{len(selected_alignment["rejected_pair_slices"])}/'
+                                               f'Display registration: {display_version}; '
+                                               f'{len(selected_alignment.get("rejected_pair_slices") or [])}/'
                                                f'{region["shape"][2]-1} adjacent pairs rejected. '
                                                f'Trace IDs held fixed; unmeasured sections: '
                                                f'{selected_alignment.get("quality_summary", {}).get("interpolated_or_extrapolated_slices", "see original QC")}.')
-        viewer_directory = directory / ('viewer_optimized' if optimized else 'viewer')
+        mesh_suffix = 'isotropic' if mesh_isotropic else 'native'
+        viewer_directory = directory / (('viewer_sofima' if align_backend == 'sofima' else
+                                         'viewer_optimized' if optimized else 'viewer') + '_mesh_' + mesh_suffix)
         report['viewer_directory'] = str(viewer_directory)
         write_json(viewer_directory / 'report.json', report)
         write_json(viewer_directory / 'viewer_state.json', viewer.state.to_json())
@@ -319,11 +330,13 @@ def serve(root, regions, align_z=True, open_browser=False, port=0, legacy_alignm
         summaries.append(report)
         viewers.append(viewer)  # Keep all four LocalVolume owners alive.
         print(f'[{region["name"]}] Neuroglancer: {url}', flush=True)
-    if any(report['display_registration_version'] == 'optimized' for report in summaries):
-        if (root / 'viewers.json').is_file() and not (root / 'viewers_original.json').exists():
-            write_json(root / 'viewers_original.json', json.loads((root / 'viewers.json').read_text()))
-        write_json(root / 'viewers_optimized.json', summaries)
-    write_json(root / 'viewers.json', summaries)
+    if (root / 'viewers.json').is_file() and not (root / 'viewers_before_mesh_update.json').exists():
+        write_json(root / 'viewers_before_mesh_update.json', json.loads((root / 'viewers.json').read_text()))
+    if align_backend == 'sofima':
+        write_json(root/'viewers_sofima.json', summaries)
+    else:
+        write_json(root / ('viewers_mesh_isotropic.json' if mesh_isotropic else 'viewers_mesh_native.json'), summaries)
+        write_json(root / 'viewers.json', summaries)
     if open_browser:
         for report in summaries:
             webbrowser.open_new_tab(report['viewer_url'])
@@ -349,7 +362,18 @@ def main():
     parser.add_argument('--port', type=int, default=0)
     parser.add_argument('--legacy-alignment', action='store_true',
                         help='serve: use the original cached field instead of validated optimized registration')
+    parser.add_argument('--align-backend', choices=['ecc', 'sofima'], default='ecc', help='serve: registration backend')
+    parser.add_argument('--sofima-python', help='serve: Python executable in an isolated SOFIMA environment')
+    parser.add_argument('--sofima-config', type=Path, help='serve: optional SOFIMA parameter JSON')
+    parser.add_argument('--mesh-isotropic', action=argparse.BooleanOptionalAction, default=True,
+                        help='serve: default-on near-isotropic meshes; native-resolution slices are unchanged')
+    parser.add_argument('--mesh-target-nm', type=float,
+                        help='serve: optional physical mesh target; default is the coarsest native axis')
     args = parser.parse_args()
+    if args.align_backend == 'sofima' and (args.stage != 'serve' or args.legacy_alignment):
+        parser.error('SOFIMA selection applies to serve and cannot be combined with --legacy-alignment')
+    if (args.sofima_config or args.sofima_python) and args.align_backend != 'sofima':
+        parser.error('SOFIMA options require --align-backend sofima')
     validate_regions(REGIONS)
     regions = [region for region in REGIONS if not args.region or region['name'] == args.region]
     root = Path(args.root).resolve()
@@ -365,7 +389,9 @@ def main():
         for region in regions:
             audit_region(root, region)
     else:
-        serve(root, regions, args.align_z, args.open_browser, args.port, args.legacy_alignment)
+        serve(root, regions, args.align_z, args.open_browser, args.port, args.legacy_alignment,
+              args.mesh_isotropic, args.mesh_target_nm, args.align_backend, args.sofima_python,
+              json.loads(args.sofima_config.read_text()) if args.sofima_config else None)
 
 
 if __name__ == '__main__':

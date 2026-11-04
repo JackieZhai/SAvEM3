@@ -31,7 +31,7 @@ def get_im_gt_name_dict(datasets, flag='valid', max_train=3000000, max_val=10000
         # read json file
         with open(json_file_path, 'r') as file:
             json_data = json.load(file)
-        # dataset_name：{neuron label：[[layer1, layer2, layer3],[layer7, layer8, layer9], ...]}
+        # dataset_name: {neuron label: [[layer1, layer2, layer3],[layer7, layer8, layer9], ...]}
         for json_data_key, json_data_value in json_data.items():
             if 'AxonEM' not in json_data_key:
                 dataset_name = json_data_key[:]
@@ -70,10 +70,10 @@ def get_im_gt_name_dict(datasets, flag='valid', max_train=3000000, max_val=10000
                 raise ValueError
             random.seed(42)
 
-            # 生成相同的随机索引列表
+            # Generate a shared list of random indices.
             random_indices = random.sample(range(len(single_dataset_part_list)), len(single_dataset_part_list))
 
-            # 使用随机索引重新排列两个列表
+            # Reorder both lists using the same random indices.
             single_dataset_part_list = [single_dataset_part_list[i] for i in random_indices]
             single_dataset_layer_list = [single_dataset_layer_list[i] for i in random_indices]
             single_dataset_label_list = [single_dataset_label_list[i] for i in random_indices]
@@ -156,11 +156,11 @@ def create_dataloaders(name_im_gt_list, my_transforms=[], batch_size=1, training
         # sampler = DistributedSampler(gos_dataset)
         #####guojy
         try:
-            # 尝试使用DistributedSampler
+            # Try DistributedSampler.
             sampler = DistributedSampler(gos_dataset)
             # print("Using DistributedSampler")
         except:
-            # 如果出错，切换到RandomSampler
+            # Fall back to RandomSampler on failure.
             # print("DistributedSampler not available, using RandomSampler")
             sampler = RandomSampler(gos_dataset)
         #####
@@ -179,11 +179,11 @@ def create_dataloaders(name_im_gt_list, my_transforms=[], batch_size=1, training
             # sampler = DistributedSampler(gos_dataset, shuffle=False)
             #####guojy
             try:
-                # 尝试使用DistributedSampler
+                # Try DistributedSampler.
                 sampler = DistributedSampler(gos_dataset, shuffle=False)
                 # print("Using DistributedSampler")
             except:
-                # 如果出错，切换到SequentialSampler
+                # Fall back to SequentialSampler on failure.
                 # print("DistributedSampler not available, using SequentialSampler")
                 sampler = SequentialSampler(gos_dataset)
             #####
@@ -244,9 +244,9 @@ class OnlineDataset(Dataset):
             img_c =  cv2.resize(img_c, dsize=(1024, 1024), interpolation=cv2.INTER_NEAREST)
             img_c = torch.unsqueeze(torch.tensor(img_c, dtype=torch.float32),0)
         elif flag=='embed':
-            # 兼容两种缓存方向：
-            #   precompute_teacher.py --write-tif 写 (H, W, C)
-            #   旧数据/上游可能写 (C, H, W)
+            # Support both cached array layouts:
+            #   precompute_teacher.py --write-tif writes (H, W, C).
+            #   Historical or upstream data may use (C, H, W).
             if img_c.ndim == 3 and img_c.shape[-1] in (256, 768, 1280):
                 img_c = np.ascontiguousarray(img_c.transpose(2, 0, 1))
             img_c = torch.tensor(img_c, dtype=torch.float32)
@@ -260,7 +260,7 @@ class OnlineDataset(Dataset):
         sample_info_layer = self.datasets["layer"][idx]
         sample_info_label = self.datasets["label"][idx]
 
-        # AxonEM 特殊处理
+        # Handle the AxonEM-specific case.
         if '/' in sample_info_dataset:
             gt_path = sample_info_dataset.split('/')[0] + '/seg_'+ sample_info_dataset.split('/')[1]
             embed_path = sample_info_dataset.split('/')[0] + '/im_'+ sample_info_dataset.split('/')[1]

@@ -1,15 +1,15 @@
-"""MPS 适配 · sitecustomize.py —— 运行时透明重定向（零改动运行旧代码）。
+"""MPS compatibility through transparent runtime redirection for legacy code.
 
-原理：Python 启动时自动 import 本模块（只要其所在目录在 PYTHONPATH 首位），
-把 PyTorch 0.4 时代代码里的 `.cuda()` 调用透明重定向到 MPS 设备：
-  - Tensor.cuda() / nn.Module.cuda()  →  .to(mps)（无 MPS 时回退 cuda/cpu）
-  - torch.cuda.FloatTensor 等旧类型  →  torch.FloatTensor
-  - torch.cuda.empty_cache()          →  容错 no-op
-显式写死的 `torch.device('cuda:0')` 与 'No GPU available' 检查由 patch_mps.py 定点修复。
+Python imports this module at startup when its directory is first on PYTHONPATH.
+Redirect PyTorch 0.4-era `.cuda()` calls to MPS, falling back to CUDA or CPU:
+  - Tensor.cuda() / nn.Module.cuda() -> .to(selected_device)
+  - Legacy types such as torch.cuda.FloatTensor -> torch.FloatTensor without CUDA
+  - torch.cuda.empty_cache() -> tolerate errors when CUDA is unavailable
+Use patch_mps.py for explicit `torch.device('cuda:0')` and 'No GPU available' checks.
 
-用法（无需改任何业务代码）：
-    PYTHONPATH=$PWD:/path/to/其余库  python main_devoem_sparse_membrane_triplet_2.py -c xxx
-或直接用 ./run_mps.sh。
+Usage (without changing application code):
+    PYTHONPATH=$PWD:/path/to/other/libraries python main_devoem_sparse_membrane_triplet_2.py -c xxx
+Alternatively, use ./run_mps.sh.
 """
 import torch
 
@@ -43,7 +43,7 @@ def _module_cuda(self, *args, **kwargs):
 torch.Tensor.cuda = _tensor_cuda
 torch.nn.Module.cuda = _module_cuda
 
-# 旧式类型构造（torch.cuda.FloatTensor(...) 等）
+# Legacy tensor constructors, such as torch.cuda.FloatTensor(...).
 if not torch.cuda.is_available():
     _map = {
         'FloatTensor': torch.FloatTensor, 'DoubleTensor': torch.DoubleTensor,
@@ -55,7 +55,7 @@ if not torch.cuda.is_available():
         if hasattr(torch.cuda, _name):
             setattr(torch.cuda, _name, _fn)
 
-# empty_cache 容错（无 CUDA 编译的 torch 上调用不报错）
+# Tolerate empty_cache failures in PyTorch builds without CUDA.
 try:
     _orig_empty_cache = torch.cuda.empty_cache
 
@@ -69,4 +69,4 @@ try:
 except Exception:
     pass
 
-print(f'[mps_adapt] CUDA 调用已重定向到 {_DEV}（MPS={_mps_ok()}）')
+print(f'[mps_adapt] CUDA calls redirected to {_DEV} (MPS={_mps_ok()})')

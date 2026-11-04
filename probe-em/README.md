@@ -1,7 +1,20 @@
 # Probe-EM
 
+The [interactive point-prompt mode](README_interactive.md) adds positive/negative
+annotations, explicit SAM/HQ-SAM/SAM2/SAEM2 image inference, bounded SAM2 propagation,
+mask preview and local acceptance. I predicts the current slice; V propagates
+through the B/E range. Moving to another section retains earlier prompts.
+
+See [tracing-quality investigation and guarded proofreading](README_trace_quality.md)
+for the five-ROI diagnosis, verification safeguards, evidence and comparison layers.
+
 The local [Neuroglancer demo](scripts/README.md) enables local slice registration by default.
 Press `A` to compare registered/original data; use `--no-align-z` to disable registration.
+Select `--align-backend sofima` for optional flow/elastic-mesh refinement with an
+isolated worker; see the [SOFIMA guide](README_sofima.md). The default backend is ECC.
+Meshes default to near-isotropic sampling inferred from each dataset's resolution
+(8×8×30 nm → 32×32×30 nm); 2D slices remain native. See the
+[mesh options](scripts/README.md#near-isotropic-meshes-default-for-every-dataset).
 
 Integration guides: [Neuroglancer demo / SAvEM³ export](scripts/README.md),
 [core modules and resume behavior](probe_em/README.md), and [configuration fields](configs/README.md).
@@ -165,11 +178,12 @@ Probe-EM now auto-selects `cuda` -> `mps` -> `cpu` when `"device": "auto"` is se
 in the config. A local MPS environment can be created as follows:
 
 ```bash
-conda create -n probe-em python=3.10
+conda create -n probe-em python=3.12 pip
 conda activate probe-em
-pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0
-pip install -e /path/to/sam2        # use an MPS-compatible SAM 2 checkout
+pip install torch==2.14.1 torchvision==0.29.1
+pip install --no-build-isolation -e /path/to/sam2  # use an MPS-compatible SAM 2 checkout
 pip install -r requirements.txt
+pip check
 ```
 
 Then run:
@@ -186,3 +200,5 @@ Notes:
 - The 2D SAM 2 image-verification path and the 3D video-propagation path were
   verified on an M4 Pro with `sam2_hiera_tiny.pt`.
 - Full tracing still needs a real precomputed `raw_path` and `seg_path`.
+- Create a fresh environment for the security upgrade; do not overwrite historical
+  Demo environments. See [INSTALL.md](INSTALL.md) and the [security audit](../docs/SECURITY_AUDIT.md).

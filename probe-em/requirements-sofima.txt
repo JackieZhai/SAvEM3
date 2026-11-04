@@ -1,0 +1,9 @@
+# Install in a separate Python 3.12 environment; do not combine with Torch requirements.
+# Selected SOFIMA source and the JAX CPU runtime tested on macOS arm64.
+sofima @ git+https://github.com/google-research/sofima@c8b5e254a9b031a9c00f3d399e47bafda3c96a22
+jax==0.12.0.1
+jaxlib==0.12.0.1
+connectomics==20250606
+numpy==2.5.4
+scipy==1.18.1
+opencv-python==5.0.0.93

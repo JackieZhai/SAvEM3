@@ -10,7 +10,7 @@ from tqdm import tqdm
 from skimage import io, measure, morphology, transform, data
 from scipy.ndimage.morphology import binary_erosion,binary_dilation
 import warnings
-# 忽略 "is a low contrast image" 警告
+# Suppress "is a low contrast image" warnings.
 warnings.filterwarnings('ignore', '.*low contrast image.*')
 
 def mem2label(mem_img):
@@ -44,7 +44,7 @@ def label2mem(label):
 
 if __name__== '__main__':
     # {'dataset_name':{layer1:[label1, label2, ...], layer2:[label6, label8, ...],...}...}
-    # 生成mem，重新映射label
+    # Generate membrane targets and remap labels.
     source_root = '/home/zhaih/share/SAM/sam-hq-main/train/prepared_segments/'
     label_save_root = '/home/zhaih/share/SAM/sam-hq-main/train/prepared_segments_mul_2d/'
     mem_save_root = '/home/zhaih/share/SAM/sam-hq-main/train/prepared_segments_mul_mem/'
@@ -128,11 +128,11 @@ if __name__== '__main__':
         json_val_save = "/home/guojy2/share/guojy/ProjectCodes/BigModel/sam-hq/"+save_folder_name+"_val.json"
 
 
-        # 将字典保存为JSON文件，指定缩进为4个空格
+        # Save the dictionary as JSON with four-space indentation.
         with open(json_train_save, 'w') as json_file:
             json.dump(json_data_train, json_file, indent=4)
 
-        # 将字典保存为JSON文件，指定缩进为4个空格
+        # Save the dictionary as JSON with four-space indentation.
         with open(json_val_save, 'w') as json_file:
             json.dump(json_data_val, json_file, indent=4)
 
@@ -193,11 +193,11 @@ if __name__== '__main__':
     # json_test_save = "/home/guojy2/share/guojy/ProjectCodes/BigModel/sam-hq/record2d_lm_test.json"
 
 
-    # # 将字典保存为JSON文件，指定缩进为4个空格
+    # # Save the dictionary as JSON with four-space indentation.
     # with open(json_train_save, 'w') as json_file:
     #     json.dump(json_data_train, json_file, indent=4)
 
-    # # 将字典保存为JSON文件，指定缩进为4个空格
+    # # Save the dictionary as JSON with four-space indentation.
     # with open(json_test_save, 'w') as json_file:
     #     json.dump(json_data_test, json_file, indent=4)
 

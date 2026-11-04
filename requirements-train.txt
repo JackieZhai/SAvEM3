@@ -1,19 +1,22 @@
-# SAvEM3 / SAEM² training environment (Python 3.9)
+# SAvEM3 / SAEM² training environment (Python >=3.10; Python 3.12 recommended)
 # Installation notes:
 #   1. Install PyTorch for your platform first:
-#      - Apple Silicon: pip install torch torchvision
+#      - Apple Silicon: pip install torch==2.14.1 torchvision==0.29.1
 #      - Linux CUDA:    Select the CUDA build at https://pytorch.org
 #   2. Then install the remaining dependencies from this file.
 #   3. WaterZ/ELF are validation/postprocessing dependencies; install separately via repro/env/.
 
-torch>=2.1
-torchvision>=0.16
+# Keep this tested pair synchronized with probe-em/requirements.txt.
+# Torch 2.14.1 is outside the affected ranges of the eight audited Torch alerts.
+torch==2.14.1
+torchvision==0.29.1
 timm>=0.9
 numpy>=1.26,<2.1
 scipy>=1.10
 scikit-image>=0.22
 scikit-learn>=1.3
-attrdict>=2.0
+# Compatible drop-in provider for the legacy "from attrdict import AttrDict" API.
+attrdict3==2.0.2
 tensorboardX>=2.6
 h5py>=3.10
 PyYAML>=6.0

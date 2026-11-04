@@ -1,17 +1,17 @@
-"""M2 准备 · 修复 saem2/ 脚本中的硬编码路径（集群绝对路径 → 本地相对/环境变量）。
+"""M2 preparation: replace hard-coded SAEM2 cluster paths with local/configurable paths.
 
-规则：
-1. 删除脚本内硬编码的 os.environ['CUDA_VISIBLE_DEVICES']（改为由启动脚本/环境决定）；
-2. /home/zhaih/.../pretrained_checkpoint/... 与 /home/guojy2/.../pretrained_checkpoint/...
-   → 'pretrained_checkpoint/...'（相对 train/ 目录）；
-3. /home/guojy2/.../work_dirs/... → 'work_dirs/...'（相对）；
-4. dataloader 的三个 root（prepared_embedding / prepared_segments_mul_2d /
-   prepared_segments_mul_mem）→ os.environ.get('SAVEM3_DATA_ROOT', '.') + 相对子目录，
-   并支持环境变量 SAVEM3_EMBED_ROOT / SAVEM3_LABEL_ROOT / SAVEM3_MEM_ROOT 覆盖；
-5. record2d json 路径 → 相对 './record2d_*.json'。
+Rules:
+1. Respect CUDA_VISIBLE_DEVICES from the launcher/environment instead of a fixed value.
+2. /home/zhaih/.../pretrained_checkpoint/... and /home/guojy2/.../pretrained_checkpoint/...
+   become 'pretrained_checkpoint/...' relative to the training directory.
+3. /home/guojy2/.../work_dirs/... becomes relative 'work_dirs/...'.
+4. Resolve the dataloader roots prepared_embedding, prepared_segments_mul_2d, and
+   prepared_segments_mul_mem under os.environ.get('SAVEM3_DATA_ROOT', '.').
+   SAVEM3_EMBED_ROOT, SAVEM3_LABEL_ROOT, and SAVEM3_MEM_ROOT override each root.
+5. Use relative './record2d_*.json' paths.
 
-幂等：首次运行会保留 .orig 备份；重复运行不重复备份。
-用法：python patch_paths.py [--check]   （--check 只打印将要修改的行，不改文件）
+Idempotent: keep a .orig backup on first modification without replacing it later.
+Usage: python patch_paths.py [--check]. The --check option prints changes without writing files.
 """
 import argparse
 import fileinput
@@ -24,7 +24,7 @@ TRAIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                          '..', '..', 'saem2')
 
 RULES = [
-    # (pattern, replacement) —— 按序应用，pattern 未匹配则跳过
+    # Apply (pattern, replacement) rules in order; skip unmatched patterns.
     (r"os\.environ\['CUDA_VISIBLE_DEVICES'\] = '\d+'",
      "os.environ['CUDA_VISIBLE_DEVICES'] = os.environ.get('CUDA_VISIBLE_DEVICES', '0')"),
     (r"['\"](/home/(zhaih|guojy2)/[^'\"]*?/)?pretrained_checkpoint/([^'\"]+)['\"]",
@@ -79,10 +79,10 @@ def patch_file(path, check_only):
             changed.append((i + 1, line.rstrip(), new.rstrip()))
             lines[i] = new
     if not changed:
-        print(f'  [无改动] {os.path.basename(path)}')
+        print(f'  [unchanged] {os.path.basename(path)}')
         return
     if check_only:
-        print(f'  [将改动] {os.path.basename(path)}')
+        print(f'  [would patch] {os.path.basename(path)}')
         for ln, old, new in changed[:8]:
             print(f'    L{ln}: {old[:90]}')
             print(f'        -> {new[:90]}')
@@ -92,7 +92,7 @@ def patch_file(path, check_only):
         shutil.copy2(path, bak)
     with open(path, 'w') as f:
         f.writelines(lines)
-    print(f'  [已修复] {os.path.basename(path)}：{len(changed)} 处（备份 .orig）')
+    print(f'  [patched] {os.path.basename(path)}: {len(changed)} changes (.orig backup)')
 
 
 def main():
@@ -101,14 +101,14 @@ def main():
     args = ap.parse_args()
 
     if not os.path.isdir(TRAIN_DIR):
-        print(f'未找到 {TRAIN_DIR}', file=sys.stderr)
+        print(f'Not found: {TRAIN_DIR}', file=sys.stderr)
         sys.exit(1)
     for name in FILES:
         path = os.path.join(TRAIN_DIR, name)
         if os.path.isfile(path):
             patch_file(path, args.check)
         else:
-            print(f'  [不存在] {name}')
+            print(f'  [missing] {name}')
 
 
 if __name__ == '__main__':

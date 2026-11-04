@@ -92,14 +92,17 @@ def traverse_local_block_xyz(segmentation, center_local, vector, resolution, tar
                 # restricting candidates to touching labels prevents ASP recovery.
                 if is_touching or dist <= max_dist_nm:
                     if neighbor_label not in stats:
-                        # [SumX, SumY, SumZ, Count]
-                        stats[neighbor_label] = np.zeros(4, dtype=np.float64)
+                        # Centroid/count plus a real, nearest candidate voxel.
+                        stats[neighbor_label] = np.array([0., 0., 0., 0.,
+                                                         float(ix), float(iy), float(iz), dist])
 
                     val = stats[neighbor_label]
                     val[0] += ix
                     val[1] += iy
                     val[2] += iz
                     val[3] += 1.0
+                    if dist < val[7]:
+                        val[4], val[5], val[6], val[7] = ix, iy, iz, dist
 
     return stats
 
@@ -161,9 +164,7 @@ def process_single_endpoint_xyz(vol, endpoint_vox_xyz, vector_xyz, target_id, en
             mean_z_local = arr[2] / count
 
             
-            global_x = mean_x_local + start[0]
-            global_y = mean_y_local + start[1]
-            global_z = mean_z_local + start[2]
+            global_x, global_y, global_z = arr[4:7] + start
 
             results.append({
                 'target_id': target_id,  
@@ -172,7 +173,10 @@ def process_single_endpoint_xyz(vol, endpoint_vox_xyz, vector_xyz, target_id, en
                 'y': global_y,
                 'z': global_z,
                 'endpoint_id': endpoint_id,
-                'voxel_count': int(count)
+                'voxel_count': int(count),
+                'endpoint_xyz': np.asarray(endpoint_vox_xyz).tolist(),
+                'distance_nm': float(arr[7]),
+                'centroid_xyz': (arr[:3] / count + start).tolist(),
             })
 
         return results
@@ -189,7 +193,8 @@ def save_connections_to_csv(connections, filename):
     print(f"Saving {len(connections)} connections to {filename} ...")
 
     
-    headers = ['target_id', 'neighbor_id', 'contact_x', 'contact_y', 'contact_z']
+    headers = ['target_id', 'neighbor_id', 'contact_x', 'contact_y', 'contact_z',
+               'endpoint_id', 'distance_nm', 'endpoint_x', 'endpoint_y', 'endpoint_z']
 
     
     with open(filename, mode='w', newline='', encoding='utf-8') as f:
@@ -203,9 +208,11 @@ def save_connections_to_csv(connections, filename):
             writer.writerow([
                 conn['target_id'],
                 conn['neighbor_id'],
-                int(conn['x']),  
-                int(conn['y']),
-                int(conn['z'])
+                float(conn['x']),
+                float(conn['y']),
+                float(conn['z']),
+                conn.get('endpoint_id', ''), conn.get('distance_nm', ''),
+                *conn.get('endpoint_xyz', ['', '', '']),
             ])
 
     print(f"Saved: {filename}")
