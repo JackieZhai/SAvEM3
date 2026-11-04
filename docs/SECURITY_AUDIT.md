@@ -1,21 +1,24 @@
 # Dependency security remediation and validation
 
-Rechecked on 2026-11-03 against the GitHub default branch at
-`b1b5d4f941a81fc3ea5dda4be1bcc933359ea00f`, which matched the local HEAD.
+Remediation published on 2026-11-04 in
+[`6946b70`](https://github.com/JackieZhai/SAvEM3/commit/6946b70b4eed6de64dd432e2888eba8598b04f1d).
+The initial audit on 2026-11-03 inspected the GitHub default branch at
+`b1b5d4f941a81fc3ea5dda4be1bcc933359ea00f`.
 Repository-specific Dependabot alerts were read through the GitHub API. The local
 dependency manifests now pin **torch 2.14.1 and torchvision 0.29.1**. This Torch
 version is outside all eight reported affected ranges below. Validation used a
 new Python 3.12 environment; existing demo environments were preserved.
 
-The remote default branch still had eight open alerts when inspected. No alerts
-were dismissed, no exploits were executed, and these local changes have not been
-committed or pushed. GitHub closure requires publication and a dependency rescan.
+After publication and GitHub's dependency rescan, the authenticated alerts API
+returned **zero open Dependabot alerts** on 2026-11-04. All eight historical Torch
+alerts below are resolved. No alerts were manually dismissed and no exploits
+were executed. This is a dated status, not a guarantee about future advisories.
 
 ## Why the reported alert appears
 
 [Alert 1](https://github.com/JackieZhai/SAvEM3/security/dependabot/1) identifies
-`torch` as a direct dependency in the remote `probe-em/requirements.txt`. That file pins
-`torch==2.6.0`, which falls in the advisory's affected range `<2.7.1-rc1`.
+`torch` as a direct dependency in `probe-em/requirements.txt`. Before remediation,
+that file pinned `torch==2.6.0`, within the advisory's affected range `<2.7.1-rc1`.
 This is [CVE-2025-2953 / GHSA-3749-ghw9-m3mg](https://github.com/advisories/GHSA-3749-ghw9-m3mg):
 a local denial-of-service issue involving `torch.mkldnn_max_pool2d`, currently
 rated Low by GitHub. It is not evidence that the repository or demos were hacked.
@@ -43,7 +46,7 @@ inputs must still be trusted.
 
 ## The repository has more than this one alert
 
-All eight open alerts observed in the API response reference
+All eight historical alerts observed in the initial API response reference
 `probe-em/requirements.txt` and package `torch`:
 
 | Alert / CVE | Affected range | First patched version recorded by GitHub |
@@ -119,6 +122,5 @@ new environment for the corrected manifests and interactive demo. Local evidence
 is stored under ignored `.cache/security-20261103/` (JUnit, audit JSON and browser
 artifacts). See [the validation record](VALIDATION.md) for the interactive checks.
 
-Publishing these changes and confirming the GitHub rescan remains separate from
-local remediation. A local edit or environment upgrade alone cannot close the
-default-branch alerts.
+Publication and the remote rescan have both been verified. A local edit or
+environment upgrade alone would not have closed the default-branch alerts.

@@ -5,6 +5,10 @@ annotations, explicit SAM/HQ-SAM/SAM2/SAEM2 image inference, bounded SAM2 propag
 mask preview and local acceptance. I predicts the current slice; V propagates
 through the B/E range. Moving to another section retains earlier prompts.
 
+For larger local datasets with neuron GT, see the [bounded evaluation guide](README_local_gt.md).
+It covers multiscale ROI selection, original/ECC/SOFIMA comparisons and synchronized
+GT, prediction and organelle-context layers in Neuroglancer.
+
 See [tracing-quality investigation and guarded proofreading](README_trace_quality.md)
 for the five-ROI diagnosis, verification safeguards, evidence and comparison layers.
 

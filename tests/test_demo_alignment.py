@@ -72,6 +72,23 @@ def test_rotated_crop_conjugates_nonzero_origin():
     np.testing.assert_array_equal(result, expected)
 
 
+def test_dense_affine_mapping_preserves_fractional_sections_and_inverse():
+    first = np.array([[1.2, .1, 30], [-.2, .9, -45], [0, 0, 1]])
+    second = first.copy()
+    second[:2, 2] += [8, -4]
+    field = ZAffineField(300, 301, {300: first, 301: second}, 300, [0, 0, 2000, 2000])
+    points = np.random.default_rng(9).uniform(100, 1800, (12000, 3))
+    points[:, 2] = np.tile([299., 299.5, 300., 300.25, 301., 302.], 2000)
+    expected = points.copy()
+    inside = (points[:, 2] >= 299.5) & (points[:, 2] <= 301)
+    fraction = np.clip(points[inside, 2]-300, 0, 1)
+    expected[inside, 0] = 1.2*points[inside, 0]+.1*points[inside, 1]+30+8*fraction
+    expected[inside, 1] = -.2*points[inside, 0]+.9*points[inside, 1]-45-4*fraction
+    actual = map_points(field, points)
+    np.testing.assert_allclose(actual, expected, atol=1e-10)
+    np.testing.assert_allclose(map_points(field, actual, inverse=True), points, atol=1e-10)
+
+
 def test_field_cache_matches_data_and_configuration(tmp_path, monkeypatch):
     import probe_em.demo_alignment as alignment
     rng = np.random.default_rng(5)
@@ -146,3 +163,45 @@ def test_aligned_cloudvolume_keeps_channel_and_nonzero_bounds(tmp_path):
     result = wrapped[100:116, 200:216, 301:302]
     assert result.shape == (16, 16, 1, 1) and result.dtype == np.uint64
     assert result[6, 6, 0, 0] == 2**63+7
+
+
+def test_auxiliary_images_and_masks_follow_alignment_and_validate_grid(tmp_path, monkeypatch):
+    pytest.importorskip('neuroglancer')
+    spec = importlib.util.spec_from_file_location('auxiliary_demo', ROOT / 'probe-em/scripts/demo.py')
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    raw, seg, offset, field, _ = shifted_bundle()
+    resolution = np.array([8, 8, 30])
+    datasets = {'raw': raw, 'seg': seg, 'context': raw.copy(), 'mask': (seg > 0).astype(np.uint8)}
+    monkeypatch.setattr(demo, 'load_local', lambda p, *a: (datasets[Path(p).name], resolution, offset))
+    path = tmp_path/'field.npz'
+    field.save(path)
+    viewer, report = demo.build_viewer(tmp_path, [], 2**63+7, tmp_path/'reviews', align_field=path,
+                                      image_layers={'mito': tmp_path/'context'},
+                                      label_layers={'sam2_ecc': tmp_path/'mask'})
+    assert report['auxiliary_layers']['mito']['type'] == 'image'
+
+    def source(name):
+        token = viewer.state.layers[name].source[0].url.rsplit('.', 1)[-1]
+        return viewer.volume_manager.volumes[token]
+
+    for aligned in [True, False, True]:
+        for name in ['mito', 'sam2_ecc']:
+            volume = source(name)
+            array = np.asarray(volume.data[:, :, :])
+            positions = np.argwhere(array > 0)+volume.voxel_offset
+            if aligned:
+                np.testing.assert_array_equal(positions[:, :2], [[106, 206]]*3)
+            else:
+                expected = datasets['context' if name == 'mito' else 'mask']
+                np.testing.assert_array_equal(array, expected)
+                np.testing.assert_array_equal(volume.voxel_offset, offset)
+            assert viewer.state.layers[name].visible is False
+        viewer.actions.invoke('toggle-alignment', {})
+    with pytest.raises(ValueError, match='Reserved'):
+        demo.build_viewer(tmp_path, [], 2**63+7, tmp_path/'reviews', align_z=False,
+                          image_layers={'raw': tmp_path/'context'})
+    datasets['mask'] = datasets['mask'][:-1]
+    with pytest.raises(ValueError, match='share the raw'):
+        demo.build_viewer(tmp_path, [], 2**63+7, tmp_path/'reviews', align_z=False,
+                          label_layers={'prediction': tmp_path/'mask'})

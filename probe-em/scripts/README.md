@@ -19,6 +19,13 @@ propagation, X stops, and Y accepts a reviewed image or volume. J/K changes
 sections while retaining each section's points. This mode can start without
 completed trace results and shares the registration and mesh settings below.
 
+For larger local volumes, `evaluate_local_gt.py` caches bounded ROIs and evaluates
+SAM2 propagation against neuron GT. See the [local GT guide](../README_local_gt.md)
+for the workflow and score interpretation. `demo.py` also accepts repeatable
+`--image-layer NAME=PATH` and `--label-layer NAME=PATH` arguments for same-grid
+precomputed context, GT and prediction volumes. They start hidden and follow the
+same A-toggle geometry and mesh policy as the main layers.
+
 Activate your Probe-EM/SAM 2 Python environment and run commands in `probe-em/`
 unless noted otherwise. Cached volumes, checkpoints, and trace results are local
 artifacts; they are not included in the GitHub clone. Use the export workflow below

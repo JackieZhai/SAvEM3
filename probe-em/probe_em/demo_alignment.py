@@ -178,18 +178,24 @@ def map_points(field, points, inverse=False):
     if isinstance(field, ZElasticField):
         return field.map_points(points, inverse=inverse)
     result = points.copy()
-    for i, point in enumerate(points):
-        lower, upper = int(np.floor(point[2])), int(np.ceil(point[2]))
+    # Dense mask gathering supplies millions of points on one section. Resolve
+    # each section transform once instead of looping over individual pixels.
+    sections, groups, counts = np.unique(points[:, 2], return_inverse=True, return_counts=True)
+    order = np.argsort(groups, kind='stable')
+    starts = np.cumsum(counts)-counts
+    for z, start, count in zip(sections, starts, counts):
+        lower, upper = int(np.floor(z)), int(np.ceil(z))
         low, high = field.transform(lower), field.transform(upper)
         if low is None and high is None:
             continue
         low = high if low is None else low
         high = low if high is None else high
-        weight = point[2]-lower
+        weight = z-lower
         matrix = (1-weight)*low + weight*high
         if inverse:
             matrix = np.linalg.inv(matrix)
-        result[i, :2] = matrix[:2, :2] @ point[:2] + matrix[:2, 2]
+        selected = order[start:start+count]
+        result[selected, :2] = np.einsum('ij,nj->ni', matrix[:2, :2], points[selected, :2]) + matrix[:2, 2]
     return result
 
 

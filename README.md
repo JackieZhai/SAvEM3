@@ -15,6 +15,8 @@ positive/negative points per section, explicit image inference, bounded SAM2
 propagation across sections and reviewed local mask outputs.
 An optional [SOFIMA backend](probe-em/README_sofima.md) adds bounded elastic local
 registration; ECC remains the default and saved dense fields work with interactive prompts.
+The [large local-volume guide](probe-em/README_local_gt.md) describes bounded
+GT evaluation, original/ECC/SOFIMA comparisons and additional context layers.
 
 The [five-ROI tracing investigation](probe-em/README_trace_quality.md) covers
 coordinate/input fixes, guarded verification and remaining model/ground-truth limits.

@@ -15,6 +15,8 @@ from probe_em.registration import ncc
 
 
 def compare(raw, seg, resolution, offset, fields):
+    if 'unregistered' not in fields or fields['unregistered'] is not None or raw.shape[2] < 2:
+        raise ValueError('Comparison needs an unregistered baseline and at least two sections')
     bounds = [registered_bounds(raw.shape, offset, field, 128_000_000) for field in fields.values() if field is not None]
     lower = np.min([np.asarray(offset)]+[np.asarray(lo) for shape, lo in bounds], axis=0)
     upper = np.max([np.asarray(offset)+raw.shape]+[np.asarray(lo)+shape for shape, lo in bounds], axis=0)
@@ -44,19 +46,23 @@ def compare(raw, seg, resolution, offset, fields):
             scores.append(row)
         previous, previous_valid = images, valid
     source_ids = set(map(int, np.unique(seg)))
-    elastic = fields['sofima']
-    xyz = np.array([[x, y, z] for z in range(int(offset[2]), int(offset[2])+raw.shape[2])
-                    for x in np.linspace(offset[0], offset[0]+raw.shape[0]-1, 5)
-                    for y in np.linspace(offset[1], offset[1]+raw.shape[1]-1, 5)])
-    error = np.linalg.norm(elastic.inverse_pts(elastic.forward_pts(xyz))-xyz, axis=1)
-    if labels_seen-source_ids-{0}:
-        raise ValueError('Warp introduced a label ID not present in the input')
-    return {'metric': 'Adjacent-section NCC on identical valid pixels across all three methods; not anatomical accuracy',
+    elastic = fields.get('sofima')
+    error = None
+    if elastic is not None:
+        xyz = np.array([[x, y, z] for z in range(int(offset[2]), int(offset[2])+raw.shape[2])
+                        for x in np.linspace(offset[0], offset[0]+raw.shape[0]-1, 5)
+                        for y in np.linspace(offset[1], offset[1]+raw.shape[1]-1, 5)])
+        error = np.linalg.norm(elastic.inverse_pts(elastic.forward_pts(xyz))-xyz, axis=1)
+        if labels_seen-source_ids-{0}:
+            raise ValueError('Warp introduced a label ID not present in the input')
+    return {'metric': 'Adjacent-section NCC on identical valid pixels across all selected methods; not anatomical accuracy',
             'sampling_xy': 2, 'mean_ncc': {name: float(np.mean([row[name] for row in scores])) for name in names},
             'mean_support_fraction': float(np.mean([row['support_fraction'] for row in scores])),
-            'pairs': scores, 'new_label_ids': [],
-            'source_label_count': len(source_ids-{0}), 'lost_label_ids': [str(i) for i in sorted(source_ids-labels_seen-{0})],
-            'roundtrip_max_error_vox': float(error.max()), 'elastic_geometry': elastic.stats()}
+            'pairs': scores, 'new_label_ids': [] if elastic is not None else None,
+            'source_label_count': len(source_ids-{0}),
+            'lost_label_ids': [str(i) for i in sorted(source_ids-labels_seen-{0})] if elastic is not None else None,
+            'roundtrip_max_error_vox': float(error.max()) if error is not None else None,
+            'elastic_geometry': elastic.stats() if elastic is not None else None}
 
 
 def main():

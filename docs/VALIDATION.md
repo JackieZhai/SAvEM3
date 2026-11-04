@@ -5,9 +5,9 @@ automation, screenshots, model execution experiments and detailed machine logs
 are retained outside the published source. Maintained unit and regression tests
 cover implementation contracts and previously observed failures.
 
-The publication regression suite passed **144 tests**, with 4 native-package
+The publication regression suite passed **150 tests**, with 4 native-package
 skips and 1 third-party deprecation warning. It included the optional real SAM2
-propagation and isolated SOFIMA regressions. English-source and whitespace checks
+propagation, isolated SOFIMA and upgraded-runtime regressions. English-source and whitespace checks
 passed. Model execution experiments and local sampling records were removed from
 the published tree after being retained in external backups.
 
@@ -37,6 +37,9 @@ geometric validity, cache reuse and loading a saved field without its worker.
 For MPS, set `SAVEM3_TEST_DEVICE=mps PYTORCH_ENABLE_MPS_FALLBACK=1`. CUDA is not
 validated by the local runs recorded here.
 
+Set `SAVEM3_SECURITY_VALIDATE_RUNTIME=1` to additionally check that the executing
+environment contains the exact Torch/Torchvision versions pinned in the manifests.
+
 ## Interactive Neuroglancer
 
 The [interactive guide](../probe-em/README_interactive.md) documents section-specific
@@ -63,6 +66,17 @@ MPS states. Keeping masks and temporal memory on MPS resolved the observed failu
 video input frames remain in CPU memory. This is a compatibility result, not a
 segmentation accuracy claim.
 
+A second browser session used a local 1024 x 1024 x 33 GT window at 8 x 8 x 30 nm.
+Raw, GT, three saved SAM2 comparisons and mito/syn/ves context layers rendered
+successfully. J/K navigation and A toggles were exercised with all eight volume
+sources synchronized. The completed check recorded no JavaScript errors or failed
+local requests. The 3D view contains a cropped slab, not a complete neuron.
+
+Dense affine mask mapping now batches points by section. Regression coverage
+checks fractional sections, inverse transforms, nonzero origins and exact label
+geometry. This removes a Python loop per pixel; the optimization changes mapping
+cost, not the model, estimated field or scoring definition.
+
 ## Local registration
 
 The [registration investigation](../probe-em/README_alignment.md) preserves controlled
@@ -84,6 +98,10 @@ The final minimum Jacobian was 0.9847, sampled point round-trip error was below
 2.7e-7 voxels, and no label IDs were introduced or lost in these four volumes.
 An initial unguarded trial made region 1 worse, motivating zero-mean residuals,
 explicitly reported inference and final adjacent-pair guards. ECC remains default.
+
+The [large local GT evaluation](../probe-em/README_local_gt.md) adds a separate
+five-neuron dataset and scores native masks on unprompted sections. Its results
+must not be conflated with the four online ROI image-consistency measurements.
 
 ## Tracing and reconstruction limits
 
@@ -107,6 +125,9 @@ upgrade and the affected ranges of the eight reported advisories. Local CPU/MPS
 compatibility was exercised with installed weights. The native postprocessing
 environment passed 11 tests with 2 environment skips in its preceding validation.
 Third-party deprecation warnings remain.
+
+After publication, GitHub marked all eight historical alerts `fixed` on
+2026-11-04; the authenticated API reported zero open alerts. None were dismissed.
 
 The separate SOFIMA environment passed `pip check`; its advisory scan found zero
 known vulnerabilities among 54 audited distributions. The pinned SOFIMA development

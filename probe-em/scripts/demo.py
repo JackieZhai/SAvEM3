@@ -48,7 +48,7 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
                  align_max_shift_nm=800., align_coarse_resolution_nm=32., align_min_ncc=.25,
                  mesh_isotropic=True, mesh_target_nm=None, mesh_cache=None,
                  comparison_ids=None, interactive=None, align_backend='ecc',
-                 sofima_python=None, sofima_options=None):
+                 sofima_python=None, sofima_options=None, image_layers=None, label_layers=None):
     import neuroglancer
     from probe_em.demo_alignment import prepare_field, register_arrays, map_points, skeleton_lines
     from probe_em.meshes import MeshVolume
@@ -92,6 +92,37 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
 
     original_sources = sources(raw, seg, seg_offset)
     registered_sources = sources(aligned_raw, aligned_seg, aligned_offset) if field is not None else None
+    # Auxiliary sources must share the native physical grid. Their display warp
+    # always follows raw, even when the saved prediction used another estimator.
+    from probe_em.alignment_field import warp_field_slice
+    extra_sources, extra_ids, extra_paths = {False: {}, True: {}}, {}, {}
+    reserved = {'raw', 'input_segments', 'probe_trace', 'manual_correction', 'skeletons',
+                'positive_points', 'negative_points', 'sam_preview', 'sam_accepted', *(comparison_ids or {})}
+    for is_label, paths in ((False, image_layers), (True, label_layers)):
+        for name, path in (paths or {}).items():
+            if not name or name in reserved or name in extra_paths:
+                raise ValueError(f'Reserved or duplicate auxiliary layer name: {name}')
+            data, resolution, offset = load_local(path, max_voxels)
+            if data.shape != raw.shape or not np.array_equal(resolution, raw_res) or not np.array_equal(offset, raw_offset):
+                raise ValueError(f'Auxiliary layer {name} must share the raw shape, resolution and voxel offset')
+            if is_label and (data.dtype.kind not in 'ui' or np.any(data < 0)):
+                raise ValueError(f'Auxiliary labels must be nonnegative integers: {name}')
+            extra_paths[name] = {'path': str(Path(path).resolve()), 'type': 'segmentation' if is_label else 'image'}
+            if is_label:
+                extra_ids[name] = [int(i) for i in np.unique(data) if i]
+            for aligned in ([False, True] if field is not None else [False]):
+                shown, origin = data, offset
+                if aligned:
+                    shown, origin = np.empty(aligned_raw.shape, data.dtype), aligned_offset
+                    for index in range(data.shape[2]):
+                        shown[:, :, index] = warp_field_slice(field, data[:, :, index], int(offset[2])+index,
+                                                              offset[:2], origin[:2], shown.shape[:2], seg=is_label)
+                if is_label:
+                    extra_sources[aligned][name] = MeshVolume(
+                        shown, dimensions=dimensions, voxel_offset=origin, mesh_isotropic=mesh_isotropic,
+                        mesh_target_nm=mesh_target_nm, mesh_cache=mesh_cache)
+                else:
+                    extra_sources[aligned][name] = neuroglancer.LocalVolume(shown, dimensions=dimensions, voxel_offset=origin)
     present = sorted(set(traced_ids) & available)
     meshes = {'policy': 'near_isotropic' if mesh_isotropic else 'native',
               'original': original_sources[1].precompute_meshes(present)}
@@ -138,6 +169,13 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
                 source=seg_source, segments=sorted(set(map(int, ids)) & available),
                 hover_highlight=False, pick=False)
             state.layers[name].visible = False
+        for name, source in extra_sources[mode['aligned']].items():
+            if name in extra_ids:
+                state.layers[name] = neuroglancer.SegmentationLayer(
+                    source=source, segments=extra_ids[name], hover_highlight=False, pick=False)
+            else:
+                state.layers[name] = neuroglancer.ImageLayer(source=source)
+            state.layers[name].visible = False
         if skeleton_layers:
             state.layers['skeletons'] = skeleton_layers[mode['aligned']]
         state.layout = '4panel'
@@ -182,6 +220,8 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
             state.layers['raw'].layer.source = raw_source
             for name in ('input_segments', 'probe_trace', 'manual_correction', *(comparison_ids or {})):
                 state.layers[name].layer.source = seg_source
+            for name, source in extra_sources[new_mode].items():
+                state.layers[name].layer.source = source
             if skeleton_layers:
                 visible = state.layers['skeletons'].visible
                 state.layers['skeletons'] = skeleton_layers[new_mode]
@@ -203,6 +243,8 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
             state.layers['probe_trace'].segments = present
             for name, ids in (comparison_ids or {}).items():
                 state.layers[name].segments = sorted(set(map(int, ids)) & available)
+            for name, ids in extra_ids.items():
+                state.layers[name].segments = ids
         mode_status()
 
     def save(_):
@@ -253,6 +295,7 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
                     'trace_hover_highlight': False,
                     'trace_spatial_picking': False,
                     'meshes': meshes,
+                    'auxiliary_layers': extra_paths,
                     'interactive': {'enabled': interactive is not None,
                                     'backend': interactive.get('backend') if interactive else None,
                                     'scope': 'per-section image prediction and bounded SAM2 video propagation',
@@ -289,6 +332,10 @@ def main():
     parser.add_argument('--correction-dir', default='demo_reviews')
     parser.add_argument('--output-dir', default='demo_session')
     parser.add_argument('--max-voxels', type=int, default=128_000_000)
+    parser.add_argument('--image-layer', action='append', default=[], metavar='NAME=PATH',
+                        help='Optional local precomputed context image on the same grid; repeatable')
+    parser.add_argument('--label-layer', action='append', default=[], metavar='NAME=PATH',
+                        help='Optional local precomputed GT or prediction on the same grid; repeatable')
     parser.add_argument('--interactive', action='store_true',
                         help='Enable point prompts, image prediction and bounded SAM2 propagation')
     parser.add_argument('--prompt-backend', choices=['sam', 'hq_sam', 'sam2', 'saem2'], default='sam2')
@@ -305,6 +352,15 @@ def main():
     parser.add_argument('--port', type=int, default=0)
     parser.add_argument('--check', action='store_true', help='Validate volumes, actions and state, then exit')
     args = parser.parse_args()
+    def named_paths(values):
+        result = {}
+        for value in values:
+            name, separator, path = value.partition('=')
+            if not separator or not name.strip() or not path.strip() or name in result:
+                parser.error('Auxiliary layers require unique NAME=PATH entries')
+            result[name] = path
+        return result
+    image_layers, label_layers = named_paths(args.image_layer), named_paths(args.label_layer)
     if args.sofima_config and args.align_backend != 'sofima':
         parser.error('--sofima-config requires --align-backend sofima')
     sofima_options = json.loads(args.sofima_config.read_text()) if args.sofima_config else None
@@ -337,7 +393,7 @@ def main():
                                  mesh_isotropic=args.mesh_isotropic, mesh_target_nm=args.mesh_target_nm,
                                  mesh_cache=Path(args.output_dir) / 'meshes', interactive=interactive,
                                  align_backend=args.align_backend, sofima_python=args.sofima_python,
-                                 sofima_options=sofima_options)
+                                 sofima_options=sofima_options, image_layers=image_layers, label_layers=label_layers)
     report['trace_results'] = str(result_folder.resolve()) if result_folder else None
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
