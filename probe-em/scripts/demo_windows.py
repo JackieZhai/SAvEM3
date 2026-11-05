@@ -51,6 +51,10 @@ def main():
             overview_info[index] = {
                 kind: volumes.register(f'overview_{index}_{kind}', item[kind+'_path'])
                 for kind in ('raw', 'seg')}
+            overview_info[index]['images'] = {
+                name: (volumes.register(f'overview_{index}_image_{number}', path),
+                       f'overview_{index}_image_{number}')
+                for number, (name, path) in enumerate(item['image_layers'].items())}
     options = dict(backend='sam2', checkpoint=args.checkpoint, model_config=args.model_config, device=args.device,
                    sam2_runtime=args.sam2_runtime, onnx_dir=args.sam2_onnx_dir, onnx_provider=args.onnx_provider,
                    onnx_threads=args.onnx_threads, feature_cache_mb=args.feature_cache_mb)
@@ -63,7 +67,9 @@ def main():
         if item['kind'] == 'overview':
             sources = {kind: f'precomputed://{url}data/overview_{index}_{kind}' for kind in ('raw', 'seg')}
             viewer, report = build_overview(item, windows, overview_info[index]['raw'], overview_info[index]['seg'],
-                                           sources['raw'], sources['seg'])
+                                           sources['raw'], sources['seg'], image_sources={
+                                               name: (info, f'precomputed://{url}data/{mount}')
+                                               for name, (info, mount) in overview_info[index]['images'].items()})
             publish(viewer, report, folder, item, index)
             return viewer
         viewer, report = build_viewer(item['local_dir'], item.get('traced_ids', []), item['seed'],

@@ -16,7 +16,10 @@ propagation across sections and reviewed local mask outputs.
 The [test-window browser](probe-em/README_windows.md) adds Previous/Next buttons,
 a window selector and D/F slice movement while retaining each window's points.
 Its compact SAEM²-SAEvM³ toolbar also displays live status and an unregistered
-full-lc overview with test-window boxes and an on-demand local chunk cache.
+**LC-NE test overview** with process-window boxes and an on-demand local chunk cache.
+The [working-volume guide](probe-em/README_working_volume.md) covers the shared
+padding-free crop, overview-only mito/syn/ves layers, process selection and
+verified ZIP64 parts for dataset publication.
 [SAM2 runtime options](probe-em/README_acceleration.md) include bounded feature
 caching and an optional ONNX encoder with the original decoder and video memory.
 An optional [SOFIMA backend](probe-em/README_sofima.md) adds bounded elastic local

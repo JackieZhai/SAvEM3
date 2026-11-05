@@ -27,7 +27,7 @@ def info(resolution=(4, 6, 30), offset=(10, 20, 40), size=(200, 300, 100), kind=
 def test_overview_bounds_use_physical_coordinates_and_remain_unregistered(tmp_path):
     raw = tmp_path/'roi/raw';raw.mkdir(parents=True)
     (raw/'info').write_text(json.dumps(info((8, 12, 30), (8, 15, 50), (6, 8, 4))))
-    item = dict(name='Entire lc', kind='overview', raw_path='raw', seg_path='labels')
+    item = dict(name='LC-NE test overview', kind='overview', raw_path='raw', seg_path='labels')
     windows = [item, dict(name='Neuron A', seed=2**63+3, local_dir=tmp_path/'roi')]
     boxes = roi_boxes(windows, info())
     assert boxes[0]['point_a'] == [16, 30, 50]
@@ -51,10 +51,28 @@ def test_overview_bounds_use_physical_coordinates_and_remain_unregistered(tmp_pa
 def test_manifest_accepts_overview_without_seed_and_resolves_source_paths(tmp_path):
     manifest = tmp_path/'windows.json'
     manifest.write_text(json.dumps({'schema_version': 1, 'windows': [
-        dict(kind='overview', name='Entire lc', raw_path='data/raw', seg_path='data/lc')]}))
+        dict(kind='overview', name='LC-NE test overview', raw_path='data/raw', seg_path='data/lc')]}))
     windows, initial = read_windows(manifest)
     assert initial == 0 and windows[0]['kind'] == 'overview'
     assert windows[0]['raw_path'] == str(tmp_path/'data/raw')
+
+
+def test_context_images_are_confined_to_overview_and_match_physical_extent(tmp_path):
+    item = dict(name='LC-NE test overview', kind='overview', raw_path='raw', seg_path='labels', segments=[30001])
+    sources = {name: (info(), f'precomputed://http://localhost/{name}') for name in ('mito', 'syn', 'ves')}
+    viewer, report = build_overview(item, [item], info(), info(kind='segmentation'),
+                                    'precomputed://http://localhost/raw', 'precomputed://http://localhost/lc', sources)
+    assert report['image_layers'] == ['mito', 'syn', 'ves']
+    for name in sources:
+        assert not viewer.state.layers[name].visible
+    with pytest.raises(ValueError, match='same physical volume'):
+        build_overview(item, [item], info(), info(kind='segmentation'), 'raw', 'labels',
+                       {'mito': (info(size=(2,3,4)), 'mito')})
+    manifest = tmp_path/'windows.json'
+    manifest.write_text(json.dumps({'schema_version': 1, 'windows': [
+        dict(name='Process', seed=30001, local_dir='roi', image_layers={'mito': 'mito'})]}))
+    with pytest.raises(ValueError, match='belong to the overview'):
+        read_windows(manifest)
 
 
 def test_status_moves_to_toolbar_and_remains_live_per_viewer():

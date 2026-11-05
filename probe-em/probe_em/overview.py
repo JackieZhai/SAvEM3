@@ -40,7 +40,7 @@ def roi_boxes(windows, overview_info):
     return boxes
 
 
-def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url):
+def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url, image_sources=None):
     resolution, offset, size = geometry(raw_info)
     seg_resolution, seg_offset, seg_size = geometry(seg_info)
     if not (np.allclose(offset*resolution, seg_offset*seg_resolution)
@@ -52,12 +52,23 @@ def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url):
     if any(type(value) is not int or not 0 < value < 2**64 for value in segments):
         raise ValueError('Overview segments must be positive uint64 integers')
     viewer = neuroglancer.Viewer()
+    image_sources = image_sources or {}
+    for name, (info, _) in image_sources.items():
+        if name in {'raw', 'lc', 'test_windows'} or info.get('type') != 'image':
+            raise ValueError('Overview context layers need distinct names and image volumes')
+        context_resolution, context_offset, context_size = geometry(info)
+        if not (np.allclose(context_offset*context_resolution, offset*resolution)
+                and np.allclose((context_offset+context_size)*context_resolution, (offset+size)*resolution)):
+            raise ValueError(f'Overview context layer {name!r} must cover the same physical volume as raw')
     with viewer.txn() as state:
         state.dimensions = dimensions
         state.layers['raw'] = neuroglancer.ImageLayer(source=raw_url)
         state.layers['lc'] = neuroglancer.SegmentationLayer(source=seg_url, segments=segments,
                                                           selected_alpha=.25, object_alpha=.75,
                                                           hover_highlight=False)
+        for name, (_, source) in image_sources.items():
+            state.layers[name] = neuroglancer.ImageLayer(source=source)
+            state.layers[name].visible = name in item.get('visible_layers', [])
         state.layers['test_windows'] = neuroglancer.LocalAnnotationLayer(
             dimensions=dimensions, annotation_color='#ffcb52',
             annotations=[neuroglancer.AxisAlignedBoundingBoxAnnotation(
@@ -95,5 +106,6 @@ def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url):
               'resolution_xyz_nm': resolution.tolist(), 'voxel_offset_xyz': offset.tolist(),
               'shape_xyz': size.astype(int).tolist(), 'boxes': boxes, 'segments': segments,
               'raw_source': item['raw_path'], 'seg_source': item['seg_path'],
+              'image_layers': list(image_sources),
               'meshes': 'Existing unregistered precomputed lc meshes; no new whole-volume meshing'}
     return viewer, report

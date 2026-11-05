@@ -28,9 +28,14 @@ must be an existing positive segment ID; it controls navigation, not model input
   "windows": [
     {
       "kind": "overview",
-      "name": "Entire lc",
-      "raw_path": "source/raw",
-      "seg_path": "source/lc",
+      "name": "LC-NE test overview",
+      "raw_path": "working/zfishlc_raw",
+      "seg_path": "working/zfishlc_lc",
+      "image_layers": {
+        "mito": "working/zfishlc_mito",
+        "syn": "working/zfishlc_syn",
+        "ves": "working/zfishlc_ves"
+      },
       "segments": [30001, 30002, 30003, 30004, 30005]
     },
     {
@@ -58,8 +63,9 @@ must be an existing positive segment ID; it controls navigation, not model input
 For an ROI, only `name`, `local_dir` and `seed` are required; `kind` defaults to `roi`.
 `position_xyz` uses absolute native voxel coordinates at the cached resolution;
 the viewer maps it into the registered display. `traced_ids` optionally selects
-existing trace labels. `image_layers` adds named context images, such as mito,
-syn and ves. All auxiliary volumes must match the native raw grid. `colors`
+existing trace labels. **Mito, syn and ves belong only to the overview**; ROI
+manifests reject those names in both image and label layers. Other ROI auxiliary
+volumes must match the native raw grid. `colors`
 assigns the displayed ID **1** in binary auxiliary masks; it is intended for
 target/prediction volumes, not arbitrary multiclass labels. `visible_layers`
 sets initial visibility for auxiliary layers only.
@@ -85,7 +91,7 @@ the defaults. The initial propagation radius is four sections; use
 
 ## Full-volume overview
 
-An optional `kind: "overview"` entry adds **Entire lc** to the selector. Its
+An optional `kind: "overview"` entry adds **LC-NE test overview** to the selector. Its
 `raw_path` and `seg_path` are local multiscale precomputed directories describing
 the same physical extent. This view always uses original coordinates, with local
 registration disabled. It does not run SAM2 or construct a whole-volume array.
@@ -98,10 +104,13 @@ This correctly places the 8 nm test windows inside the 4 nm full `zfishlc` volum
 All boxes are visible in 3D; slice views show their intersections. D/F navigates
 native sections in the overview too. A does not enable overview registration.
 
-Raw and lc labels stream from their original mip pyramids. The optional `segments`
-list selects the displayed lc IDs; by default it uses the ROI seeds. Existing
-precomputed lc meshes are served unchanged. The local example's mesh metadata
-specifies 32 x 32 x 30 nm. Newly computed ROI meshes retain their near-isotropic
+Raw and lc labels stream from their published mip pyramids. Overview `image_layers`
+adds mito, syn and ves as grayscale context, hidden by default. Each must match
+raw's physical extent; `visible_layers` can enable selected context layers.
+The optional `segments` list selects the displayed lc IDs; by default it uses
+the ROI seeds. Precomputed lc meshes are served from the selected dataset.
+The cropped working collection clips the original 32 x 32 x 30 nm meshes to
+the crop's physical bounds. Newly computed ROI meshes retain their near-isotropic
 policy, and every view keeps `showSlices=false`.
 
 Only requested metadata/chunks/mesh fragments are copied to
@@ -135,7 +144,9 @@ window's URL are saved as `viewer_url.txt`; window links include `#window=N` and
 retain the toolbar. **Open in tab** also retains switching and status controls.
 The internal iframe URL is separately saved as `neuroglancer_url.txt`.
 
-The local five-neuron demonstration uses the bounded windows described in the
-[local GT guide](README_local_gt.md). Raw, labels and comparison results are read
-from local caches. Its additional full-lc view fetches chunks on demand and never
-registers the whole volume.
+The current local demonstration uses five soma-free process windows at varying
+distances from their soma centers, replacing the earlier soma pilot. See the
+[working-volume guide](README_working_volume.md) for selection and crop geometry,
+and the [local GT guide](README_local_gt.md) for comparison limits. Raw, labels and
+comparison results use local caches. The overview fetches working-volume chunks
+on demand and never registers the whole volume.

@@ -17,6 +17,13 @@ shared model calls. See [test windows](../README_windows.md) and
 `viewer_status.py` routes live messages to the compact toolbar without changing
 the native status behavior of standalone demos.
 
+`working_volume.py` computes shared coverage and exports exact decoded pixels or
+integer labels. Its optional `jpeg_crop.c` helper transfers DCT coefficients
+through memory pipes, without temporary JPEG files. `mesh_crop.py` clips legacy
+surfaces to physical bounds. `archive.py` packages completed datasets as ordinary
+independent ZIP64 parts with member and archive checksums, and verifies safe
+restoration. See the [working-volume guide](../README_working_volume.md).
+
 This implementation follows
 [Probe-EM: Targeted Neuron Tracing via Training-Free Semantic Verification](https://arxiv.org/html/2607.04696v1).
 Tracing starts at a seed segment. Models verify candidate connections without

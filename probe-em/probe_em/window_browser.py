@@ -41,6 +41,9 @@ def read_windows(path):
             entry['align_field'] = local(entry['align_field'])
         for kind in ('image_layers', 'label_layers'):
             entry[kind] = {name: local(value) for name, value in entry.get(kind, {}).items()}
+        if entry['kind'] == 'roi' and ({'mito', 'syn', 'ves'} &
+                                      (entry['image_layers'].keys() | entry['label_layers'].keys())):
+            raise ValueError('mito, syn and ves belong to the overview, not individual test windows')
         windows.append(entry)
     initial = manifest.get('initial_index', 0)
     if not isinstance(initial, int) or not 0 <= initial < len(windows):

@@ -8,8 +8,8 @@ It does not align, segment or load an entire large volume.
 
 The [test-window browser](README_windows.md) displays these cached ROIs behind
 Previous/Next buttons and a selector, retaining each window's points and predictions.
-An **Entire lc** entry provides an unregistered multiscale overview with the five
-ROI bounding boxes and the original lc meshes. It caches viewed chunks locally
+The **LC-NE test overview** provides an unregistered multiscale overview with five
+process ROI bounding boxes, lc meshes and mito/syn/ves context. It caches viewed chunks locally
 instead of reading the full 672 GB native raw array.
 
 ## Data and coordinate contract
@@ -107,7 +107,7 @@ Registration NCC measures image consistency, not segmentation accuracy. SOFIMA
 may retain ECC unchanged when its elastic refinement fails quality guards.
 Compare GT scores as well as NCC; improved NCC does not guarantee improved Dice.
 
-## Measured five-neuron pilot
+## Historical soma pilot
 
 The completed 2026-11-04 run used the local generic SAM2 Hiera Tiny checkpoint on
 MPS, one positive point per neuron and all 33 sections per method. No negative
@@ -135,8 +135,8 @@ The corresponding adjacent-section NCC values, measured on common valid pixels:
 
 ECC helped three windows and reduced Dice in two. SOFIMA increased NCC in four
 windows, but improved Dice over ECC in only two; its guards retained ECC unchanged
-for 30004. These results support keeping ECC as the default and SOFIMA optional.
-They do not establish a universal ranking of alignment methods or statistical
+for 30004. ECC remains the configurable default and SOFIMA is optional.
+These results do not establish a universal ranking of alignment methods or statistical
 significance from five windows.
 
 Important remaining errors are visible in the separate precision/recall scores.
@@ -174,13 +174,10 @@ python probe-em/scripts/demo.py \
   --label-layer sam2_original=/local-ssd/evaluation/neuron_30002/unregistered/mask \
   --label-layer sam2_ecc=/local-ssd/evaluation/neuron_30002/ecc/mask \
   --label-layer sam2_sofima=/local-ssd/evaluation/neuron_30002/sofima/mask \
-  --image-layer mito=/local-ssd/context/mito \
-  --image-layer syn=/local-ssd/context/syn \
-  --image-layer ves=/local-ssd/context/ves \
   --output-dir /local-ssd/demo
 ```
 
-Omit context options if those cached images are unavailable. Add `--align-field`
+In the window browser, mito/syn/ves appear only in the full overview. Add `--align-field`
 with the saved ECC field to reuse the exact evaluation transform. Registration
 is on by default, `showSlices` is false, and meshes use 32 x 32 x 30 nm here.
 `A` switches the display coordinates of every layer together. It does not rerun
@@ -192,9 +189,47 @@ The supplied mito/syn/ves directories lack `info` files. Their inspected chunks
 are grayscale JPEG images on the native raw chunk grid, not instance labels.
 For the local example, metadata was derived in memory from raw only after checking
 chunk geometry and encoding; the source directories were not altered. A strict
-ROI read was cached at 8 nm using 2 x 2 XY area means. These are context intensity
-layers, not calibrated probabilities. Derived metadata and sampling provenance
-are retained with the local cache. They are not fed into the SAM2 comparison.
+ROI read was historically cached at 8 nm using 2 x 2 XY area means. The current
+working collection instead retains native pixels and adds display pyramids for
+the overview, as described in the [crop guide](README_working_volume.md).
+These are context intensity layers, not calibrated probabilities. They are not
+fed into the SAM2 comparison.
+
+## Process-window comparison
+
+The 2026-11-05 comparison uses five new **512 x 512 x 63** cached windows at
+8 x 8 x 30 nm. Entire boxes exclude all five estimated soma regions. The selected
+processes lie approximately 11.0, 15.6, 23.2, 29.9 and 38.0 micrometers from
+their respective soma centers. These distances are Euclidean, not neurite path
+lengths. Fine-grid checks confirm target presence in every cached section.
+
+Generic SAM2 Hiera Tiny on MPS propagated **33 central sections** from one
+positive interior point. Each method used the same native point and fresh video
+memory. Dice below covers only the 32 unprompted sections; no negative points or
+GT masks were supplied to the model.
+
+| Neuron | Original input Dice | ECC Dice |
+| --- | ---: | ---: |
+| 30001 | 0.0023 | 0.2557 |
+| 30002 | 0.7940 | 0.1603 |
+| 30003 | 0.2948 | 0.2833 |
+| 30004 | 0.8952 | 0.9046 |
+| 30005 | 0.1100 | 0.1155 |
+
+The process benchmark is substantially harder than the historical soma pilot.
+ECC's 30001 and 30002 predictions cover almost all target voxels but have
+precision only 0.1466 and 0.0871, respectively, indicating extensive excess area.
+Several other predictions have high precision and very low recall, indicating
+missing process coverage. Improved image alignment does not guarantee better
+segmentation. Keep both results available for inspection and use corrective
+positive/negative points; these measurements do not establish whole-neuron
+tracing accuracy. SOFIMA was not evaluated on these new process windows.
+
+Saved prediction layers cover only the evaluated 33-section subrange; zeros
+outside it mean **not evaluated**, not validated background. Interactive
+propagation can select a different range within the 63-section cache. Evaluation
+frames, native masks, field fingerprints, conditioning points and checkpoint
+metadata remain in the local run directory, outside the source repository.
 
 ## Scaling beyond this pilot
 

@@ -11,7 +11,10 @@ optional ONNX encoder, platform options and measured tradeoffs.
 
 For larger local datasets with neuron GT, see the [bounded evaluation guide](README_local_gt.md).
 It covers multiscale ROI selection, original/ECC/SOFIMA comparisons and synchronized
-GT, prediction and organelle-context layers in Neuroglancer.
+GT and prediction layers in Neuroglancer. Mito/syn/ves are limited to the full
+**LC-NE test overview**. The [working-volume guide](README_working_volume.md)
+documents padding removal across all seven datasets, soma-free process windows,
+lossless export and independent ZIP64 parts for sharing.
 
 See [tracing-quality investigation and guarded proofreading](README_trace_quality.md)
 for the five-ROI diagnosis, verification safeguards, evidence and comparison layers.
