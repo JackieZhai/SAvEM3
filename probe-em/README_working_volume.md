@@ -5,6 +5,40 @@ precomputed datasets while retaining original physical coordinates and all Z
 sections. It reads bounded chunks, uses CloudVolume codecs and metadata, and
 publishes a new directory. It does not use igneous or modify source datasets.
 
+## Copy whole chunks when the source grid is preserved
+
+Determine one physical bbox from downsampled raw, then convert it to each
+corresponding dataset's voxel coordinates. Raw, mito, syn, ves and labels share
+the physical crop; different resolutions and chunk sizes still need their own
+chunk-coordinate calculations.
+
+The exporter copies any output chunk that exactly matches one source chunk and
+uses the same encoding. Its stored bytes, including an optional gzip wrapper,
+are retained and checked after writing. No pixel decoding, JPEG processing or
+label re-encoding is performed for these chunks. The `copied` count in each
+scale report distinguishes this path from rewritten boundary chunks. A crop
+containing only whole JPEG chunks does not need the JPEG helper.
+
+This shortcut depends on the output grid. The standard
+[Neuroglancer precomputed format](https://github.com/google/neuroglancer/blob/master/src/datasource/precomputed/volume.md#chunked-representation-of-volume-data)
+anchors that grid at `voxel_offset`; chunk starts are
+`voxel_offset + chunk_index * chunk_size`. An off-grid lower crop edge therefore
+shifts every output chunk, including interior chunks. Simply retaining the old
+interior filenames and shortening the first chunk would produce an invalid
+precomputed volume. Such crops require retiling to retain the exact bbox.
+
+The current LC-NE bbox begins at native X=96 while the image source chunks begin
+at X=0, 512, 1024, and so on. It therefore uses the retiling path. Moving its left
+edge inward to X=512 would align native image chunks but remove another 1.664
+micrometers of valid tissue. Label chunks and coarser scales have different grids;
+aligning one grid does not automatically align the others. Crop bounds are never
+silently rounded to enable copying.
+
+Encoding is also specified per scale. If a JPEG boundary cannot be cropped
+losslessly with the helper, the exact-pixel export uses raw/gzip for that entire
+scale; JPEG interior chunks cannot be mixed with raw boundary chunks under a
+single scale's encoding. These constraints are separate from finding the bbox.
+
 ## Determine the shared crop
 
 `scripts/crop_working_volume.py --scan-raw ...` inspects every original Z plane
@@ -72,7 +106,8 @@ only after every voxel chunk is complete. Per-dataset `crop_status.json` and the
 collection status distinguish completion from interruption.
 
 Integer labels remain exact, including uint64 IDs. Nonuniform output chunks are
-decoded and compared pixel by pixel. All-background compressed segmentation
+decoded and compared pixel by pixel when rewritten; copied chunks retain and
+verify their original bytes. All-background compressed segmentation
 chunks are certified from the compressed label palettes and a decoded, verified
 zero template. No label interpolation or averaging occurs during cropping.
 

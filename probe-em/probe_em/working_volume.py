@@ -122,13 +122,15 @@ def crop_info(info, bounds_nm, jpeg_crop=None):
         target['voxel_offset'], target['size'] = low.tolist(), (high - low).tolist()
         if source['encoding'] == 'jpeg':
             chunk = np.asarray(source['chunk_sizes'][0])
+            whole_chunks = (np.all((low - source_low) % chunk == 0)
+                            and np.all(((high - source_low) % chunk == 0) | (high == source_high)))
             aligned = (np.all((low[:2] - source_low[:2]) % 8 == 0)
                        and np.all((high[:2] - source_low[:2]) % 8 == 0)
                        and np.all(chunk[:2] % 8 == 0)
                        and low[2] == source_low[2] and high[2] == source_high[2])
             # Gzip/raw is lossless relative to decoded source pixels. Never silently
             # requantize JPEG when the crop cuts through an 8x8 DCT block.
-            target['encoding'] = 'jpeg' if jpeg_crop and aligned else 'raw'
+            target['encoding'] = 'jpeg' if whole_chunks or (jpeg_crop and aligned) else 'raw'
         elif source['encoding'] not in ('raw', 'png', 'compressed_segmentation'):
             raise ValueError(f'Unsupported source encoding: {source["encoding"]}')
     return result
@@ -146,7 +148,8 @@ class ChunkReader:
         self.decoded = lru_cache(maxsize=48)(self._decoded)
         self.locks = [threading.Lock() for _ in range(64)]
 
-    def _encoded(self, name):
+    def stored(self, name):
+        """Read an original chunk without decoding or changing outer compression."""
         if self.archive is not None:
             key = f'{self.source.name}/{self.scale["key"]}/{name}'
             compressed = key+'.gz' in self.archive.NameToInfo
@@ -155,17 +158,20 @@ class ChunkReader:
                     payload = self.archive.read(key+'.gz' if compressed else key)
                 except KeyError as error:
                     raise FileNotFoundError(f'Missing archive chunk: {key}') from error
-            if compressed:
-                payload = gzip.decompress(payload)
             if not payload:
                 raise ValueError(f'Empty archive chunk: {key}')
-            return payload
+            return payload, compressed
         path = self.source / self.scale['key'] / name
         compressed = path.with_name(path.name + '.gz')
-        payload = gzip.decompress(compressed.read_bytes()) if compressed.is_file() else path.read_bytes()
+        gzipped = compressed.is_file()
+        payload = compressed.read_bytes() if gzipped else path.read_bytes()
         if not payload:
             raise ValueError(f'Empty source chunk: {path}')
-        return payload
+        return payload, gzipped
+
+    def _encoded(self, name):
+        payload, compressed = self.stored(name)
+        return gzip.decompress(payload) if compressed else payload
 
     def pieces(self, low, high):
         first = (low - self.offset) // self.chunk
@@ -263,7 +269,8 @@ def crop_precomputed(source, destination, bounds_nm, *, info=None, jpeg_crop=Non
                      source_archive=None, archive_identity='sha256', progress=None):
     """Write all voxel chunks, then publish info; missing inputs fail explicitly.
 
-    Nonuniform chunks are compared pixel by pixel. Empty segmentation chunks are
+    Matching whole chunks are copied byte for byte without codec work. Retiled
+    nonuniform chunks are compared pixel by pixel. Empty segmentation chunks are
     certified from their compressed label palettes and a verified zero template.
     Resume requires the identical persisted plan; verify_resume also rereads pixels.
     """
@@ -307,7 +314,19 @@ def crop_precomputed(source, destination, bounds_nm, *, info=None, jpeg_crop=Non
         plan['source_archive']=identity
     plan_path = destination / 'crop_plan.json'
     if destination.exists():
-        if not resume or not plan_path.exists() or json.loads(plan_path.read_text()) != plan:
+        previous = json.loads(plan_path.read_text()) if resume and plan_path.is_file() else None
+        if previous is not None:
+            # Older runs used raw/gzip for whole JPEG chunks without a helper.
+            # Preserve that persisted codec instead of invalidating good output
+            # merely because new runs can now copy the original JPEG bytes.
+            legacy_target = deepcopy(target)
+            for scale, saved in zip(legacy_target['scales'], previous.get('info', {}).get('scales', [])):
+                if scale['encoding'] == 'jpeg' and saved.get('encoding') == 'raw':
+                    scale['encoding'] = 'raw'
+            legacy_plan = dict(plan, info=legacy_target)
+            if previous == legacy_plan:
+                target, plan = legacy_target, legacy_plan
+        if previous != plan:
             raise FileExistsError('Destination exists; resume requires an identical crop plan')
     else:
         destination.mkdir(parents=True)
@@ -348,21 +367,43 @@ def crop_precomputed(source, destination, bounds_nm, *, info=None, jpeg_crop=Non
 
             def process(box):
                 low, high = box
-                path = folder / chunk_name(low, high)
+                base_path = folder / chunk_name(low, high)
+                path = base_path
                 if encoding in ('raw', 'compressed_segmentation'):
                     path = path.with_name(path.name + '.gz')
-                if resume and path.is_file() and not verify_resume:
+                # Copied inputs retain their original gzip wrapper, including
+                # uncompressed raw/cseg or gzipped JPEG chunks. Earlier exports
+                # may use the opposite wrapper under the same crop metadata.
+                existing = False
+                if resume:
+                    for candidate in (path, base_path, base_path.with_name(base_path.name+'.gz')):
+                        if candidate.is_file():
+                            path, existing = candidate, True
+                            break
+                if existing and not verify_resume:
                     return path.stat().st_size, 'resumed'
+                source_low = reader.offset + ((low-reader.offset)//reader.chunk)*reader.chunk
+                source_high = np.minimum(source_low+reader.chunk, reader.end)
+                if (not existing and encoding == original['encoding']
+                        and np.array_equal(low, source_low) and np.array_equal(high, source_high)):
+                    payload, compressed = reader.stored(chunk_name(low, high))
+                    path = base_path.with_name(base_path.name+'.gz') if compressed else base_path
+                    temporary = path.with_name(path.name+'.tmp')
+                    temporary.write_bytes(payload)
+                    if temporary.read_bytes() != payload:
+                        raise ValueError(f'Copied chunk differs from source bytes: {path.name}')
+                    temporary.replace(path)
+                    return len(payload), 'copied'
                 pieces = list(reader.pieces(low, high))
                 if (encoding == original['encoding'] == 'compressed_segmentation'
-                        and not (resume and path.is_file()) and all_background(pieces)):
+                        and not existing and all_background(pieces)):
                     payload = zero_chunk(tuple(map(int,high-low)))
                     temporary = path.with_name(path.name+'.tmp')
                     temporary.write_bytes(payload)
                     temporary.replace(path)
                     return len(payload),'uniform_verified'
                 values = reader.assemble(low, high, pieces)
-                if resume and path.is_file():
+                if existing:
                     saved = path.read_bytes()
                     payload = gzip.decompress(saved) if path.suffix == '.gz' else saved
                     decoded = chunks.decode(payload, encoding, shape=values.shape, dtype=values.dtype,
@@ -402,7 +443,7 @@ def crop_precomputed(source, destination, bounds_nm, *, info=None, jpeg_crop=Non
                 return len(payload), 'verified'
 
             stats = dict(key=scale['key'], encoding=encoding, chunks=0, bytes=0, verified=0, resumed=0,
-                         resumed_verified=0, uniform_verified=0)
+                         resumed_verified=0, uniform_verified=0, copied=0)
             report['scales'].append(stats)
             iterator = iter(chunk_bounds(scale))
             with ThreadPoolExecutor(max_workers=workers) as pool:

@@ -183,3 +183,76 @@ def test_zero_palette_certificate_matches_decoded_constant_blocks(dtype):
     encoded=chunks.encode(values,'compressed_segmentation',block_size=block)
     assert not certified_zero_segmentation(encoded,shape,block,dtype)
     assert not certified_zero_segmentation(b'bad',shape,block,dtype)
+
+
+@pytest.mark.parametrize('encoding', ['raw', 'jpeg', 'compressed_segmentation'])
+@pytest.mark.parametrize('zip_source', [False, True])
+def test_matching_chunks_are_copied_verbatim_without_decoding(tmp_path, monkeypatch, encoding, zip_source):
+    import gzip
+    import zipfile
+    import probe_em.working_volume as working
+    from cloudvolume import CloudVolume
+    values = np.arange(96*96*6, dtype=np.uint64).reshape(96,96,6)
+    values = values+2**63 if encoding == 'compressed_segmentation' else values.astype(np.uint8)
+    source = make_source(tmp_path/'source',values,encoding)
+    # Keep a nonzero global origin and crop at an interior source chunk edge.
+    bounds = [[48*4,56*4,5*30],[112*4,120*4,11*30]]
+    expected = np.asarray(source[48:112,56:120,5:11]).copy()
+    folder = tmp_path/'source/4_4_30'
+    # Exercise both wrappers, independently of the default codec compression.
+    for path in list(folder.iterdir()):
+        if encoding == 'raw' and path.suffix == '.gz':
+            path.with_suffix('').write_bytes(gzip.decompress(path.read_bytes()));path.unlink()
+        elif encoding == 'jpeg' and path.suffix != '.gz':
+            path.with_name(path.name+'.gz').write_bytes(gzip.compress(path.read_bytes()));path.unlink()
+    stored = {path.name:path.read_bytes() for path in folder.iterdir()}
+    archive_path = None
+    if zip_source:
+        archive_path = tmp_path/'source.zip'
+        with zipfile.ZipFile(archive_path,'w',compression=zipfile.ZIP_DEFLATED) as archive:
+            for path in (tmp_path/'source').rglob('*'):
+                if path.is_file():archive.write(path,path.relative_to(tmp_path).as_posix())
+    def unexpected_decode(*args):
+        raise AssertionError('Whole copied chunks must bypass pixel assembly')
+    with monkeypatch.context() as patch:
+        patch.setattr(working.ChunkReader,'assemble',unexpected_decode)
+        report = crop_precomputed(tmp_path/'source',tmp_path/'working',bounds,source_archive=archive_path,workers=2)
+        resumed = crop_precomputed(tmp_path/'source',tmp_path/'working',bounds,source_archive=archive_path,resume=True)
+    assert report['scales'][0]['encoding'] == encoding
+    assert report['scales'][0]['copied'] == report['scales'][0]['chunks'] == 8
+    assert resumed['scales'][0]['resumed'] == 8
+    for path in (tmp_path/'working/4_4_30').iterdir():
+        assert path.read_bytes() == stored[path.name]
+    output = CloudVolume((tmp_path/'working').resolve().as_uri(),fill_missing=False,parallel=False)
+    np.testing.assert_array_equal(output[:],expected)
+
+
+def test_aligned_crop_copies_interior_and_rewrites_only_cut_boundaries(tmp_path):
+    from cloudvolume import CloudVolume
+    values = np.arange(96*96*6,dtype=np.uint64).reshape(96,96,6)+2**63
+    source = make_source(tmp_path/'source',values,'compressed_segmentation')
+    bounds = [[48*4,56*4,5*30],[104*4,112*4,11*30]]
+    report = crop_precomputed(tmp_path/'source',tmp_path/'working',bounds,workers=2)
+    scale = report['scales'][0]
+    assert scale['copied'] == 2 and scale['verified'] == 6
+    output = CloudVolume((tmp_path/'working').resolve().as_uri(),fill_missing=False,parallel=False)
+    np.testing.assert_array_equal(output[:],source[48:104,56:112,5:11])
+
+
+def test_resume_keeps_legacy_raw_encoding_for_whole_jpeg_chunks(tmp_path, monkeypatch):
+    import probe_em.working_volume as working
+    make_source(tmp_path/'source',np.full((64,64,6),127,np.uint8),'jpeg')
+    bounds = [[16*4,24*4,5*30],[80*4,88*4,11*30]]
+    original = working.crop_info
+    def legacy_info(*args, **kwargs):
+        result = original(*args, **kwargs)
+        result['scales'][0]['encoding'] = 'raw'
+        return result
+    with monkeypatch.context() as patch:
+        patch.setattr(working,'crop_info',legacy_info)
+        crop_precomputed(tmp_path/'source',tmp_path/'working',bounds)
+    plan = (tmp_path/'working/crop_plan.json').read_bytes()
+    report = crop_precomputed(tmp_path/'source',tmp_path/'working',bounds,resume=True,verify_resume=True)
+    assert report['scales'][0]['encoding'] == 'raw'
+    assert report['scales'][0]['resumed_verified'] == 8
+    assert (tmp_path/'working/crop_plan.json').read_bytes() == plan
