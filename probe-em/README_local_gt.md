@@ -28,8 +28,10 @@ evaluation windows are loaded and cached; the full native array is not required.
 
 Raw and GT must use the same physical coordinate origin. The selected raw grid
 must be an integer coarsening of the selected GT grid. Instance IDs are sampled
-at voxel centers using nearest neighbors, never averaged. For this dataset, the
-4 nm GT is sampled with XY phase 1 and stride 2 to match 8 nm raw. Missing chunks
+at voxel centers using nearest neighbors, never averaged. In the historical pilot,
+4 nm GT was sampled with XY phase 1 and stride 2 to match 8 nm raw. The cropped
+release provides both raw and GT at 8 nm in mip 0; its new 8/16 nm label levels
+use the majority-vote policy described in the dataset provenance. Missing chunks
 are errors, not implicit background. Raw, locator and pre-resampling GT reads
 have explicit voxel limits; their limits do not describe total model memory.
 
@@ -41,7 +43,7 @@ Run from the repository root in the installed Probe-EM/SAM2 environment:
 PYTORCH_ENABLE_MPS_FALLBACK=1 python probe-em/scripts/evaluate_local_gt.py \
   --raw-path /data/LC-NE-test/zfishlc_raw \
   --gt-path /data/LC-NE-test/zfishlc_lc \
-  --raw-mip 1 --gt-mip 0 --locator-mip 4 \
+  --raw-mip 0 --gt-mip 0 --locator-mip 5 \
   --xy 1024 --slices 33 \
   --checkpoint /models/sam2_hiera_tiny.pt \
   --model-config sam2_hiera_t.yaml --device mps \
