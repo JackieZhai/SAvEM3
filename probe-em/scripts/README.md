@@ -323,11 +323,8 @@ endpoints are for local demonstration, not evidence of complete neuron ends.
 
 ## Script responsibilities
 
-`crop_working_volume.py` exports a shared lossless physical crop, including clipped
-legacy meshes. `build_context_pyramid.py` adds display scales to native-only JPEG
-context images. `select_process_windows.py` caches thin-process ROIs that exclude
-all estimated soma regions. The [working-volume guide](../README_working_volume.md)
-covers their manifests, validation and portable ZIP64 packaging.
+The [LC-NE test dataset](../../docs/LC_NE_TEST.md) provides example volumes for
+`demo_windows.py` and bounded evaluation with `evaluate_local_gt.py`.
 
 `run_probe_em.py` runs HSS → PEC/ASP → tracing. `demo.py` reviews existing results
 and saves versioned corrections. `verify_traces_neuroglancer.py` retains the

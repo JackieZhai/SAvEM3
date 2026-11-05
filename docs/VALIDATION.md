@@ -5,9 +5,8 @@ automation, screenshots, model execution experiments and detailed machine logs
 are retained outside the published source. Maintained unit and regression tests
 cover implementation contracts and previously observed failures.
 
-The latest regression suite passed **194 tests**, with 7 skips and 1 third-party
-deprecation warning. It used the real SAM2 checkpoint on MPS and the compiled
-JPEG helper. Skips cover unavailable training/native dependencies, the separate
+The latest regression suite passed **163 tests**, with 7 skips and 1 third-party
+deprecation warning. It used the real SAM2 checkpoint on MPS. Skips cover unavailable training/native dependencies, the separate
 SOFIMA worker and an opt-in runtime-version check. Earlier validation exercised
 the isolated SOFIMA and upgraded-runtime regressions. English-source and
 whitespace checks passed. Model execution experiments and local sampling records
@@ -164,44 +163,22 @@ coverage. Quantitative reproduction still requires the specified weights, data
 and ground truth. A bounded interactive review does not edit the source instance
 labels or automatically merge/split the reconstruction.
 
-## Cropped LC-NE working data and process windows
+## LC-NE test
 
-The 2026-11-05 coverage scan inspected every original Z section at
-32 x 32 x 30 nm. The selected guarded rectangle has physical bounds
-`[384, 0, 0]` to `[71040, 68256, 47490]` nm. See the
-[working-volume guide](../probe-em/README_working_volume.md) for the scan-grid
-maximum, native offsets, exact-pixel export, mesh clipping and ZIP64 packaging.
+[LC-NE test](LC_NE_TEST.md) is the separately distributed example dataset for
+bounded evaluation and Neuroglancer review. Five 512 x 512 x 63 process windows
+exclude estimated soma regions, with soma-center distances from 11.0 to 38.0
+micrometers. Actual SAM2/MPS inference compared unregistered and ECC inputs across
+33 central sections per window; the [local GT guide](../probe-em/README_local_gt.md#process-window-comparison)
+records the scores and remaining errors.
 
-Five new 512 x 512 x 63 process windows replace soma profiles in the local review
-browser. Their full boxes exclude estimated soma regions, with soma-center
-distances from 11.0 to 38.0 micrometers. Actual SAM2/MPS inference compared
-unregistered and ECC inputs across 33 central sections for each window; the
-[local GT guide](../probe-em/README_local_gt.md#process-window-comparison) records
-the scores and the substantial remaining errors.
-
-Chrome rendered all five cached process views with a 31 px toolbar,
-`showSlices=false`, default ECC and no mito/syn/ves layers. Image prediction,
-D/F movement, nine-section propagation and retaining the preview after switching
-were exercised against the real model. Browser JavaScript errors were zero.
-Overview-only context layers and physical extents have regression coverage;
-the new complete cropped overview is pending the bulk export.
-
-The crop/packaging regressions cover exhaustive rectangle comparisons, retaining
-dark tissue at unrelated borders, shifted grids, exact large uint64 IDs, missing
-chunks, resume corruption, DCT coefficient retile equality, direct ZIP sources,
-zero-block certificates, no temporary JPEG files, crossing mesh triangles,
-partial pyramid cells, repaired interrupted context chunks, independent ZIP
-parts, checksum failures, extraction containment and reconstruction.
-
-The `zfishlc_lc` export and clipped meshes completed. Its independent ZIP contains
-133,113 files and is 424,394,310 bytes; every member was reread and checked against
-its source SHA256 and ZIP CRC. Archive SHA256 is
-`e156ba5cab93ca54bfdc1f039a6a40bb0bfcb22a469d6d959e2801d5152fd01d`.
-The remaining six dataset exports and full working-copy restoration are
-incomplete because file operations stalled on the host's storage mounts,
-including local paths. The local publication manifest explicitly marks the
-bundle blocked. No Hugging Face upload has occurred. This is not a completed
-seven-dataset export or a complete cropped-overview validation.
+Chrome rendered the five process views with a 31 px toolbar, `showSlices=false`,
+default ECC and no mito/syn/ves layers. Image prediction, D/F movement,
+nine-section propagation and retaining the preview after switching were exercised
+against the real model. Browser JavaScript errors were zero. The full-volume
+overview displays the five process boxes and provides mito/syn/ves context with
+registration disabled. Physical extents and overview-only context layers have
+regression coverage.
 
 ## Dependency and source checks
 

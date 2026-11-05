@@ -29,12 +29,12 @@ must be an existing positive segment ID; it controls navigation, not model input
     {
       "kind": "overview",
       "name": "LC-NE test overview",
-      "raw_path": "working/zfishlc_raw",
-      "seg_path": "working/zfishlc_lc",
+      "raw_path": "LC-NE-test/zfishlc_raw",
+      "seg_path": "LC-NE-test/zfishlc_lc",
       "image_layers": {
-        "mito": "working/zfishlc_mito",
-        "syn": "working/zfishlc_syn",
-        "ves": "working/zfishlc_ves"
+        "mito": "LC-NE-test/zfishlc_mito",
+        "syn": "LC-NE-test/zfishlc_syn",
+        "ves": "LC-NE-test/zfishlc_ves"
       },
       "segments": [30001, 30002, 30003, 30004, 30005]
     },
@@ -109,9 +109,9 @@ adds mito, syn and ves as grayscale context, hidden by default. Each must match
 raw's physical extent; `visible_layers` can enable selected context layers.
 The optional `segments` list selects the displayed lc IDs; by default it uses
 the ROI seeds. Precomputed lc meshes are served from the selected dataset.
-The cropped working collection clips the original 32 x 32 x 30 nm meshes to
-the crop's physical bounds. Newly computed ROI meshes retain their near-isotropic
-policy, and every view keeps `showSlices=false`.
+The example dataset's existing meshes use 32 x 32 x 30 nm sampling. Newly
+computed ROI meshes retain their near-isotropic policy, and every view keeps
+`showSlices=false`.
 
 Only requested metadata/chunks/mesh fragments are copied to
 `OUTPUT/overview_cache/`, or `--overview-cache /path/on/local-ssd`. Gzip chunks are
@@ -144,9 +144,8 @@ window's URL are saved as `viewer_url.txt`; window links include `#window=N` and
 retain the toolbar. **Open in tab** also retains switching and status controls.
 The internal iframe URL is separately saved as `neuroglancer_url.txt`.
 
-The current local demonstration uses five soma-free process windows at varying
-distances from their soma centers, replacing the earlier soma pilot. See the
-[working-volume guide](README_working_volume.md) for selection and crop geometry,
-and the [local GT guide](README_local_gt.md) for comparison limits. Raw, labels and
-comparison results use local caches. The overview fetches working-volume chunks
+The [LC-NE test](../docs/LC_NE_TEST.md) demonstration uses five process windows at
+varying distances from their soma centers, replacing the earlier soma pilot.
+See the [local GT guide](README_local_gt.md) for comparison limits. Raw, labels
+and comparison results use local caches. The overview fetches dataset chunks
 on demand and never registers the whole volume.

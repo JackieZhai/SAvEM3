@@ -14,7 +14,7 @@ instead of reading the full 672 GB native raw array.
 
 ## Data and coordinate contract
 
-The November 2026 local `zfishlc` dataset has native raw dimensions
+The historical pilot used the original `zfishlc` collection with raw dimensions
 20600 x 20600 x 1583 at **4 x 4 x 30 nm**. Its raw mip 1 is 8 x 8 x 30 nm;
 the full native uint8 array would contain about 672 GB. The GT archive contains
 three datasets, `zfishlc_lc`, `zfishlc_lcpre` and `zfishlc_lcsyn`. The neuron
@@ -22,11 +22,9 @@ evaluation uses `zfishlc_lc`, which contains IDs 30001 through 30005 at its
 coarsest scale. The other two label datasets are retained without assigning
 unverified semantics to them.
 
-Copy and extract the archive to a local SSD before evaluation. This archive has
-approximately 598,000 entries despite its 276 MB compressed size; network-mounted
-small-file extraction can dominate runtime. The local extraction completed with
-a successful archive check. Source files are not modified. Raw need not be copied
-in full: only selected windows are read and cached locally.
+The prepared example dataset is named [LC-NE test](../docs/LC_NE_TEST.md). Read
+each volume's `info` for its actual bounds and resolutions. Only selected
+evaluation windows are loaded and cached; the full native array is not required.
 
 Raw and GT must use the same physical coordinate origin. The selected raw grid
 must be an integer coarsening of the selected GT grid. Instance IDs are sampled
@@ -41,8 +39,8 @@ Run from the repository root in the installed Probe-EM/SAM2 environment:
 
 ```bash
 PYTORCH_ENABLE_MPS_FALLBACK=1 python probe-em/scripts/evaluate_local_gt.py \
-  --raw-path /data/zfishlc_raw \
-  --gt-path /local-ssd/gt/zfishlc_lc \
+  --raw-path /data/LC-NE-test/zfishlc_raw \
+  --gt-path /data/LC-NE-test/zfishlc_lc \
   --raw-mip 1 --gt-mip 0 --locator-mip 4 \
   --xy 1024 --slices 33 \
   --checkpoint /models/sam2_hiera_tiny.pt \
@@ -185,15 +183,10 @@ the saved comparisons or change how those predictions were produced. Interactive
 `V` uses the display space selected when that new task starts. See the
 [interactive controls](README_interactive.md) for point correction and acceptance.
 
-The supplied mito/syn/ves directories lack `info` files. Their inspected chunks
-are grayscale JPEG images on the native raw chunk grid, not instance labels.
-For the local example, metadata was derived in memory from raw only after checking
-chunk geometry and encoding; the source directories were not altered. A strict
-ROI read was historically cached at 8 nm using 2 x 2 XY area means. The current
-working collection instead retains native pixels and adds display pyramids for
-the overview, as described in the [crop guide](README_working_volume.md).
-These are context intensity layers, not calibrated probabilities. They are not
-fed into the SAM2 comparison.
+The LC-NE test mito/syn/ves volumes are grayscale context images with their own
+precomputed metadata and display scales. Their physical extent matches raw.
+They are not instance labels or calibrated probabilities, and they are not fed
+into the SAM2 comparison.
 
 ## Process-window comparison
 
