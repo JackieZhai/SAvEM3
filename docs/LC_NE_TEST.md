@@ -24,8 +24,16 @@ Model checkpoints are separate downloads; see the repository's
 The volumes use Neuroglancer precomputed layout. Keep each `info` file with its
 scale and mesh directories. Use metadata for bounds, voxel offsets, resolutions
 and codecs. Corresponding volumes share physical coordinates; their chunk sizes
-and available scales can differ. Native raw resolution is 4 x 4 x 30 nm, and the
-process-window demonstration uses 8 x 8 x 30 nm imagery.
+can differ. The cropped release uses the following six resolutions (XYZ, nm):
+8 x 8 x 30, 16 x 16 x 30, 32 x 32 x 30, 64 x 64 x 60, 128 x 128 x 120,
+and 256 x 256 x 240. Its finest level and the process-window imagery are both
+8 x 8 x 30 nm. The release excludes the original 4 nm level.
+
+Select scales by their `resolution` metadata. In this release, mip 0 is 8 nm;
+historical experiments on the original collection used mip 1 for 8 nm raw.
+Physical crop bounds are `[384, 0, 0]` to `[71040, 68256, 47490]` nm. At 8 nm,
+the voxel offset is `[48, 0, 0]` and the size is `[8832, 8532, 1583]`.
+Coarser levels preserve global coordinates and include partial boundary voxels.
 
 Mito/syn/ves are grayscale context images, not instance IDs or calibrated
 probabilities. The auxiliary `lcpre` and `lcsyn` annotation semantics should be

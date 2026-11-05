@@ -100,7 +100,8 @@ Choose an ROI in the selector to use point prediction and propagation.
 The `test_windows` annotation layer contains a named bounding box for every ROI.
 Bounds come from each cached `raw/info`: offset and size are converted through
 physical nm into the overview's native coordinates. Upper bounds are exclusive.
-This correctly places the 8 nm test windows inside the 4 nm full `zfishlc` volume.
+This correctly places the 8 nm test windows in either the original collection or
+the cropped LC-NE test overview, whose finest release level is also 8 nm.
 All boxes are visible in 3D; slice views show their intersections. D/F navigates
 native sections in the overview too. A does not enable overview registration.
 
