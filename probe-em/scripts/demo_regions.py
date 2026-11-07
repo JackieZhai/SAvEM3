@@ -340,7 +340,7 @@ def serve(root, regions, align_z=True, open_browser=False, port=0, legacy_alignm
     if open_browser:
         for report in summaries:
             webbrowser.open_new_tab(report['viewer_url'])
-    print('Four independent viewers ready. Keep this process alive. A toggles local registration.', flush=True)
+    print('Four independent viewers ready. Keep this process alive. R toggles local realignment.', flush=True)
     try:
         threading.Event().wait()
     except KeyboardInterrupt:

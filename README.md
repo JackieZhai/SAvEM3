@@ -1,42 +1,11 @@
 # SAEM²-SAEvM³
 
-Maintained entry points: [Reproduction workflow and paper differences](docs/REPRODUCTION.md) ·
-[SAvEM³ training/inference](repro/savem3/README.md) ·
-[Probe-EM / Neuroglancer demo](probe-em/scripts/README.md).
+Tools for 3D neuron reconstruction from electron microscopy, with SAEM² image
+pretraining, SAvEM³ distillation, and interactive Neuroglancer review.
 
-Local demos default to optional slice registration and near-isotropic mesh generation
-inferred from each dataset's resolution, while retaining native-resolution 2D slices.
-
-See the [validation record](docs/VALIDATION.md) for local tests, demo provenance, and outstanding evaluations.
-The [dependency security report](docs/SECURITY_AUDIT.md) records the Torch 2.14.1
-upgrade, all eight advisory ranges and CPU/MPS validation.
-The [interactive Neuroglancer mode](probe-em/README_interactive.md) supports
-positive/negative points per section, explicit image inference, bounded SAM2
-propagation across sections and reviewed local mask outputs.
-The [test-window browser](probe-em/README_windows.md) adds Previous/Next buttons,
-a window selector and D/F slice movement while retaining each window's points.
-Its compact SAEM²-SAEvM³ toolbar also displays live status and an unregistered
-**LC-NE test overview** with process-window boxes and an on-demand local chunk cache.
-[LC-NE test](docs/LC_NE_TEST.md) is the example dataset for these views, with
-corresponding raw, context and label volumes. Mito/syn/ves appear only in the
-overview; the five test windows focus on neuronal processes.
-[SAM2 runtime options](probe-em/README_acceleration.md) include bounded feature
-caching and an optional ONNX encoder with the original decoder and video memory.
-An optional [SOFIMA backend](probe-em/README_sofima.md) adds bounded elastic local
-registration; ECC remains the default and saved dense fields work with interactive prompts.
-The [large local-volume guide](probe-em/README_local_gt.md) describes bounded
-GT evaluation, original/ECC/SOFIMA comparisons and additional context layers.
-
-The [five-ROI tracing investigation](probe-em/README_trace_quality.md) covers
-coordinate/input fixes, guarded verification and remaining model/ground-truth limits.
-The [SAEM2 trial](probe-em/README_saem2_trial.md) additionally compares historical
-ViT-B image predictions and membrane-driven small-slab 3D reconstruction.
-
-The maintained workflow includes three-target teacher export, standalone distillation and resume,
-sliding-window/ROI inference, consistent postprocessing and graph-cut interfaces, explicit Probe-EM
-tracing states, and local Neuroglancer review. The original commands below remain for historical
-experiment comparison; use the reproduction guide for new data. Short runs and demos do not
-establish reproduction of the paper's quantitative results.
+[Training and inference](docs/WORKFLOW.md) ·
+[LC-NE test data](docs/LC_NE_TEST.md) ·
+[Neuroglancer demo](probe-em/README_windows.md)
 
 **SAEM²-SAEvM³: Pretrained and Distilled Models for General-purpose 3D Neuron
 Reconstruction**
@@ -70,7 +39,7 @@ Official code repository for the BIBM 2024 paper:
 | `requirements-train.txt` | Python dependencies for SAEM²/SAvEM³ training |
 | `requirements-post.txt` | Python dependencies for waterz / elf / ERL postprocessing |
 | `data/` | Optional local data directory (not committed) |
-| `docs/` | Reproduction contracts, validation records, and experiment limits |
+| `docs/` | Workflow, dataset, and development guides |
 | `tests/` | Scientific invariant, training, graph-cut and Probe-EM regression tests |
 
 ## Installation
@@ -120,7 +89,13 @@ The postprocessing environment installs:
 
 ## Data and pretrained weights
 
-Large files are intentionally not committed. Prepare them as follows.
+**LC-NE test** is the supplied test dataset: cropped, SOFIMA-aligned, normalized
+zebrafish EM with corresponding labels and context volumes. Its Neuroglancer
+demo contains an overview and five neuronal process windows. See the
+[dataset guide](docs/LC_NE_TEST.md) and the release's `TUTORIAL.md` for setup.
+
+Datasets and model checkpoints are distributed separately from the source code.
+Training data must be prepared separately; LC-NE test is reserved for testing.
 
 ### SAM / HQ-SAM weights
 

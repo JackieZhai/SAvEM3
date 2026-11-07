@@ -119,6 +119,13 @@ def test_viewer_alignment_defaults_on_and_toggle_preserves_review(tmp_path, monk
         'vertices': (vertices * resolution).tolist(), 'edges': [[0, 1], [1, 2]]}}))
     viewer, report = demo.build_viewer(tmp_path, [label], label, tmp_path / 'reviews', align_field=field_path)
     assert report['alignment']['enabled'] is True
+    for bindings in (viewer.config_state.state.input_event_bindings.viewer,
+                     viewer.config_state.state.input_event_bindings.slice_view):
+        assert bindings['keyr'] == 'toggle-alignment'
+        assert bindings['shift+keyr'] == 'restore-result'
+        assert 'keya' not in bindings
+    assert 'R: toggle local realignment' in viewer.config_state.state.status_messages['probe-em']
+    assert 'compare alignment' not in viewer.config_state.state.status_messages['probe-em']
     original_state = viewer.state.to_json()
     assert original_state['showSlices'] is False
     assert report['show_slices'] is False
@@ -127,17 +134,19 @@ def test_viewer_alignment_defaults_on_and_toggle_preserves_review(tmp_path, monk
     np.testing.assert_allclose(report['meshes']['original']['native_resolution_xyz_nm'], [8, 8, 30])
     position = np.array(viewer.state.position)
     viewer.actions.invoke('toggle-alignment', {})
-    assert 'Local alignment: OFF' in viewer.config_state.state.status_messages['probe-em']
+    assert 'Local realignment: OFF' in viewer.config_state.state.status_messages['probe-em']
     assert viewer.state.to_json()['layers'][0]['source'] != original_state['layers'][0]['source']
     viewer.actions.invoke('save-review', {})
     saved = json.loads(next((tmp_path / 'reviews').glob('*.json')).read_text())
     assert saved['display_space'] == 'original' and saved['segments'] == [str(label)]
     viewer.actions.invoke('toggle-alignment', {})
-    assert 'Local alignment: ON' in viewer.config_state.state.status_messages['probe-em']
+    assert 'Local realignment: ON' in viewer.config_state.state.status_messages['probe-em']
     np.testing.assert_allclose(viewer.state.position, position)
     assert viewer.state.to_json()['layers'][0]['source'] == original_state['layers'][0]['source']
     assert list(viewer.state.layers['manual_correction'].segments) == [label]
     assert viewer.state.show_slices is False
+    assert viewer.state.show_axis_lines is True
+    assert viewer.state.to_json()['layout'] == '4panel-alt'
     assert 'Mesh grid: 32x32x30 nm' in viewer.config_state.state.status_messages['probe-em']
 
     monkeypatch.setattr('probe_em.demo_alignment.prepare_field', lambda *a, **k: pytest.fail('Disabled alignment was executed'))

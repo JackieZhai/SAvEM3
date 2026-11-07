@@ -38,6 +38,13 @@ class FakeModel:
             mask[y, x] = label
         return mask, .75
 
+    def predict_refined(self, image, points, labels, mask_input=None):
+        mask, score = self.predict(image, points, labels)
+        return dict(mask=mask, score=score, low_res_logits=np.zeros((1,256,256),np.float32),
+                    diagnostics=dict(positive_points=int((labels==1).sum()), negative_points=int((labels==0).sum()),
+                                     positive_missed=0, negative_included=0, candidates_checked=1,
+                                     previous_mask_used=mask_input is not None))
+
 
 @pytest.fixture
 def session(tmp_path, monkeypatch):
@@ -66,6 +73,7 @@ def session(tmp_path, monkeypatch):
     assert bindings.viewer['keyd'] == bindings.slice_view['keyd'] == 'prompt-previous-section'
     assert bindings.viewer['keyf'] == bindings.slice_view['keyf'] == 'prompt-next-section'
     assert 'keyj' not in bindings.viewer and 'keyk' not in bindings.viewer
+    assert viewer.probe_em_section_bounds == (300, 302)
     assert viewer.state.position[2] % 1 == .5
     assert not viewer.state.layers['probe_trace'].visible
     yield controller
@@ -227,6 +235,65 @@ def test_inference_failure_is_recoverable_and_toggle_during_run_is_safe(session)
     session.model.release.set()
     session.future.result(timeout=15)
     assert session.preview is not None and session._matches(session.preview['snapshot'])
+
+
+def enable_refinement(session):
+    session.model.backend = 'sam2'
+    inputs = []
+
+    def predict(image, points, labels, mask_input=None):
+        inputs.append(None if mask_input is None else mask_input.copy())
+        mask, score = session.model.predict(image, points, labels)
+        return dict(mask=mask, score=score, low_res_logits=np.full((1,256,256),len(inputs),np.float32),
+                    diagnostics=dict(positive_points=int((labels==1).sum()), negative_points=int((labels==0).sum()),
+                                     positive_missed=0, negative_included=0, candidates_checked=1,
+                                     previous_mask_used=mask_input is not None))
+    session.model.predict_refined = predict
+    return inputs
+
+
+def test_refinement_history_stays_with_the_object_section_and_unchanged_points(session):
+    inputs = enable_refinement(session)
+    point(session,[106,207,301])
+    action(session,'prompt-run');session.future.result(timeout=15)
+    first = session.preview
+    point(session,[114,214,301],0)
+    action(session,'prompt-run');session.future.result(timeout=15)
+    np.testing.assert_array_equal(inputs[-1],first['low_res_logits'])
+    with np.load(session.preview['folder']/'prediction.npz') as data:
+        assert data['low_res_logits'].shape == (1,256,256)
+    point(session,[106,207,302])
+    action(session,'prompt-run');session.future.result(timeout=15)
+    assert inputs[-1] is None
+    point(session,[115,213,301],0)
+    action(session,'toggle-alignment')
+    action(session,'prompt-run');session.future.result(timeout=15)
+    assert inputs[-1] is not None
+    with session.viewer.txn() as state:
+        state.layers['positive_points'].annotations[0].point = [107,207,301]
+    point(session,[116,212,301],0)
+    action(session,'prompt-run');session.future.result(timeout=15)
+    assert inputs[-1] is None
+    action(session,'prompt-undo')
+    action(session,'prompt-run');session.future.result(timeout=15)
+    assert inputs[-1] is None
+    action(session,'prompt-clear')
+    assert not session.image_history
+    point(session,[106,207,301])
+    action(session,'prompt-run');session.future.result(timeout=15)
+    assert inputs[-1] is None
+
+
+def test_stale_refinement_cannot_seed_the_next_object(session):
+    enable_refinement(session)
+    session.model.release = threading.Event()
+    point(session,[106,207,301])
+    action(session,'prompt-run')
+    assert session.model.started.wait(10)
+    action(session,'prompt-clear')
+    session.model.release.set()
+    session.future.result(timeout=15)
+    assert session.preview is None and not session.image_history
 
 
 def test_stale_client_frame_and_unsynchronized_annotations_are_rejected(session):

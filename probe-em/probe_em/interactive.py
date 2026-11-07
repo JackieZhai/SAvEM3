@@ -25,8 +25,8 @@ from probe_em.propagation import PropagationCancelled, PropagationGrid, check_ca
 
 POINT_LAYERS = {1: 'positive_points', 0: 'negative_points'}
 LAYER_NAMES = (*POINT_LAYERS.values(), 'sam_preview', 'sam_accepted')
-HELP = ('p/n: points; i: current slice; d/f: previous/next slice; b/e: range start/end; '
-        'v: SAM2 propagate; x: stop; u: undo; c: new object; y: accept/save. ')
+HELP = ('P/N: points; I: current slice; D/F: previous/next slice; B/E: range start/end; '
+        'V: SAM2 propagate; X: stop; U: undo; C: new object; Y: accept/save. ')
 
 
 class InteractiveSession:
@@ -46,6 +46,7 @@ class InteractiveSession:
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='probe-em-prompt')
         self.future = None
         self.preview = self.accepted = None
+        self.image_history = {}
         self.edit_history = []
         self.generation = 0
         self.closed = False
@@ -86,6 +87,8 @@ class InteractiveSession:
                 state.input_event_bindings.viewer[f'key{key}'] = f'prompt-{action}'
                 # Slice-panel defaults take priority over viewer bindings.
                 state.input_event_bindings.slice_view[f'key{key}'] = f'prompt-{action}'
+        from probe_em.viewer_navigation import install_section_navigation
+        install_section_navigation(viewer, int(self.offset[2]), int(self.offset[2])+raw.shape[2]-1)
         self.status('Add points on an XY section. I predicts that slice; V propagates with SAM2. ' + HELP)
 
     def _guard(self, callback, needs_frame=True):
@@ -225,6 +228,7 @@ class InteractiveSession:
             for name in POINT_LAYERS.values():
                 state.layers[name].annotations = []
         self.edit_history.clear()
+        self.image_history.clear()
         self._invalidate()
         self.status('Cleared prompts and preview; saved results retained. ' + HELP)
 
@@ -234,7 +238,7 @@ class InteractiveSession:
             with self.viewer.txn() as state:
                 state.layers[name].annotations = [a for a in state.layers[name].annotations if a.id != annotation_id]
             self._invalidate()
-        self.status('Undid last p/n point. Use the annotation tab for manual edits. ' + HELP)
+        self.status('Undid last P/N point. Use the annotation tab for manual edits. ' + HELP)
 
     def run(self, action=None):
         if self.future is not None and not self.future.done():
@@ -250,46 +254,102 @@ class InteractiveSession:
         self.status(f'Running {self.model.backend} on z={snapshot["z"]}; model loads on first run...')
         self.future = self.executor.submit(self._predict, snapshot)
 
+    def _infer_image(self, snapshot):
+        z = snapshot['z']
+        image = np.repeat(self.raw[:, :, z-int(self.offset[2])].T[..., None], 3, axis=2)
+        points = snapshot['points'][:, :2] - self.offset[:2]
+        with self.lock:
+            previous = self._refinement_parent(snapshot)
+        refinement = None
+        if self.model.backend == 'sam2':
+            refinement = self.model.predict_refined(image, points, snapshot['labels'],
+                mask_input=previous['low_res_logits'] if previous is not None else None)
+            mask, score = refinement['mask'], refinement['score']
+        else:
+            mask, score = self.model.predict(image, points, snapshot['labels'])
+        mask = np.asarray(mask)
+        if mask.shape != image.shape[:2] or not np.isin(mask, [0, 1]).all():
+            raise ValueError('Predictor must return a binary mask in native YX coordinates')
+        return dict(mask=mask.astype(bool), score=score, image=image, snapshot=snapshot,
+                    refinement=refinement, previous=previous)
+
+    def _save_image(self, prediction):
+        """Persist a completed image prediction with the controller lock held."""
+        snapshot = prediction['snapshot']
+        z, mask, image = snapshot['z'], prediction['mask'], prediction['image']
+        refinement, previous = prediction['refinement'], prediction['previous']
+        folder = self.output / ('prediction_' + uuid.uuid4().hex)
+        folder.mkdir(parents=True, exist_ok=False)
+        metadata = dict(self.model.metadata, schema_version=1, scope='single_section_review',
+                        created_at=datetime.now(timezone.utc).isoformat(), source=self.source,
+                        resolution_xyz_nm=self.resolution.tolist(), absolute_z=z,
+                        voxel_offset_xyz=[*map(int, self.offset[:2]), z], mask_axes='YX',
+                        points_xyz_original=snapshot['points'].tolist(), point_labels=snapshot['labels'].tolist(),
+                        raw_rgb_sha256=hashlib.sha256(image.tobytes()).hexdigest(),
+                        predicted_score=prediction['score'], mask_pixels=int(mask.sum()),
+                        display_alignment=self.field.stats() if self.field else None)
+        extra = {}
+        if refinement is not None:
+            metadata['point_refinement'] = refinement['diagnostics']
+            metadata['multimask_output'] = refinement['diagnostics']['candidates_checked'] > 1
+            metadata['refinement_parent'] = (previous['folder'].name if previous is not None
+                and refinement['diagnostics']['previous_mask_used'] else None)
+            extra['low_res_logits'] = refinement['low_res_logits']
+        np.savez_compressed(folder / 'prediction.npz', mask_yx=mask, raw_rgb_yxc=image,
+                            points_xyz=snapshot['points'], point_labels=snapshot['labels'],
+                            **extra, **field_slice_payload(self.field, z))
+        (folder / 'metadata.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
+        result = {'mask': mask, 'snapshot': snapshot, 'folder': folder}
+        if refinement is not None:
+            result.update(low_res_logits=refinement['low_res_logits'], point_refinement=refinement['diagnostics'])
+            self.image_history[z] = result
+        return result
+
+    @staticmethod
+    def _point_check_message(counts):
+        return (f'Point check: {counts["negative_included"]}/{counts["negative_points"]} negative included; '
+                f'{counts["positive_missed"]}/{counts["positive_points"]} positive missed. ')
+
     def _predict(self, snapshot):
         try:
-            z = snapshot['z']
-            image = np.repeat(self.raw[:, :, z-int(self.offset[2])].T[..., None], 3, axis=2)
-            points = snapshot['points'][:, :2] - self.offset[:2]
-            mask, score = self.model.predict(image, points, snapshot['labels'])
-            mask = np.asarray(mask)
-            if mask.shape != image.shape[:2] or not np.isin(mask, [0, 1]).all():
-                raise ValueError('Predictor must return a binary mask in native YX coordinates')
-            mask = mask.astype(bool)
+            prediction = self._infer_image(snapshot)
+            z, mask = snapshot['z'], prediction['mask']
             with self.lock:
                 if self.closed:
                     return
                 if not self._matches(snapshot):
-                    self.status('Points changed during inference; discarded stale result. Press i to rerun.')
+                    self.status('Points changed during inference; discarded stale result. Press I to rerun.')
                     return
-                folder = self.output / ('prediction_' + uuid.uuid4().hex)
-                folder.mkdir(parents=True, exist_ok=False)
-                metadata = dict(self.model.metadata, schema_version=1, scope='single_section_review',
-                                created_at=datetime.now(timezone.utc).isoformat(), source=self.source,
-                                resolution_xyz_nm=self.resolution.tolist(), absolute_z=z,
-                                voxel_offset_xyz=[*map(int, self.offset[:2]), z], mask_axes='YX',
-                                points_xyz_original=snapshot['points'].tolist(), point_labels=snapshot['labels'].tolist(),
-                                raw_rgb_sha256=hashlib.sha256(image.tobytes()).hexdigest(),
-                                predicted_score=score, mask_pixels=int(mask.sum()),
-                                display_alignment=self.field.stats() if self.field else None)
-                np.savez_compressed(folder / 'prediction.npz', mask_yx=mask, raw_rgb_yxc=image,
-                                    points_xyz=snapshot['points'], point_labels=snapshot['labels'],
-                                    **field_slice_payload(self.field, z))
-                (folder / 'metadata.json').write_text(json.dumps(metadata, indent=2), encoding='utf-8')
-                self.preview = {'mask': mask, 'snapshot': snapshot, 'folder': folder}
+                self.preview = self._save_image(prediction)
                 with self.viewer.txn() as state:
                     self._render_mask(state, 'sam_preview', self.preview, self.mode['aligned'])
                     self._center_section(state, z)
-                self.status(f'Preview z={z}, {int(mask.sum())} pixels. y: accept/save; edit points then i: rerun. ' + HELP)
+                agreement = ''
+                if prediction['refinement'] is not None:
+                    agreement = self._point_check_message(prediction['refinement']['diagnostics'])
+                self.status(f'Preview z={z}, {int(mask.sum())} pixels. ' + agreement +
+                            'Y: accept/save; edit points then I: rerun. ' + HELP)
         except Exception as error:
             with self.lock:
                 if not self.closed:
                     self.preview = None
-                    self.status(f'Prediction failed: {type(error).__name__}: {error}. Press i to retry.')
+                    self.status(f'Prediction failed: {type(error).__name__}: {error}. Press I to retry.')
+
+    def _refinement_parent(self, snapshot):
+        """Reuse one section's mask only when its existing point prompts remain."""
+        previous = self.image_history.get(snapshot['z'])
+        if previous is None:
+            return None
+        old = previous['snapshot']
+        if len(snapshot['ids']) <= len(old['ids']):
+            return None
+        indices = {key: i for i, key in enumerate(snapshot['ids'])}
+        for i, key in enumerate(old['ids']):
+            j = indices.get(key)
+            if (j is None or old['labels'][i] != snapshot['labels'][j]
+                    or not np.allclose(old['points'][i], snapshot['points'][j], atol=.02, rtol=0)):
+                return None
+        return previous
 
     def propagate(self, action=None):
         if self.model.backend != 'sam2':
@@ -311,6 +371,32 @@ class InteractiveSession:
         self.cancel_event = threading.Event()
         self.status(f'Preparing SAM2 propagation on z={start}..{end}; X stops after the current step.')
         self.future = self.executor.submit(self._propagate, snapshot, grid, self.cancel_event)
+
+    def _conditioning_images(self, snapshot, grid, cancel):
+        """Use the same native image correction for I and every V anchor."""
+        results = {}
+        for z in np.unique(snapshot['points'][:, 2]).astype(int):
+            check_cancelled(cancel)
+            selected = snapshot['points'][:, 2] == z
+            section = dict(snapshot, z=int(z), scope='image', points=snapshot['points'][selected],
+                           labels=snapshot['labels'][selected],
+                           ids=[key for key, keep in zip(snapshot['ids'], selected) if keep])
+            with self.lock:
+                if self.closed or not self._matches(snapshot):
+                    raise PropagationCancelled('Points changed while preparing conditioning masks')
+                previous = self.image_history.get(int(z))
+                if previous is not None and self._same_prompts(section,
+                        dict(previous['snapshot'], generation=section['generation'])):
+                    results[int(z)-grid.z_start] = dict(previous, reused=True)
+                    continue
+                self.status(f'Preparing corrected SAM2 mask for z={z}. X stops.')
+            prediction = self._infer_image(section)
+            check_cancelled(cancel)
+            with self.lock:
+                if self.closed or not self._matches(snapshot):
+                    raise PropagationCancelled('Points changed while preparing conditioning masks')
+                results[int(z)-grid.z_start] = dict(self._save_image(prediction), reused=False)
+        return results
 
     def _propagate(self, snapshot, grid, cancel):
         folder = self.output / ('propagation_' + uuid.uuid4().hex)
@@ -343,17 +429,30 @@ class InteractiveSession:
                 self.field.save(folder/'alignment.npz')
                 metadata['alignment_field'] = 'alignment.npz'
             prompts = grid.prompts(snapshot['points'], snapshot['labels'])
+            conditioning = self._conditioning_images(snapshot, grid, cancel)
+            mask_inputs = {index: grid.video_mask(result['mask'], grid.z_start+index)
+                           for index, result in conditioning.items()}
+            metadata['conditioning_masks'] = [dict(frame=index, absolute_z=grid.z_start+index,
+                prediction_dir=str(result['folder']), reused_image_prediction=result['reused'],
+                native_mask_sha256=hashlib.sha256(result['mask'].tobytes()).hexdigest(),
+                video_mask_sha256=hashlib.sha256(mask_inputs[index].tobytes()).hexdigest())
+                for index, result in sorted(conditioning.items())]
+            write_metadata()
             count = grid.z_end-grid.z_start+1
             masks = np.zeros((count, self.raw.shape[1], self.raw.shape[0]), bool)
             processed = np.zeros(count, bool)
-            for index, mask in self.model.propagate(folder/'frames', prompts, cancel=cancel, progress=progress):
+            for index, mask in self.model.propagate(folder/'frames', prompts, mask_inputs=mask_inputs,
+                                                     cancel=cancel, progress=progress):
                 check_cancelled(cancel)
                 with self.lock:
                     if self.closed or not self._matches(snapshot):
                         raise PropagationCancelled('Points changed during propagation; discarded stale result')
                 if not 0 <= index < count or processed[index]:
                     raise ValueError('Video predictor returned a duplicate or out-of-range frame')
-                masks[index] = grid.native_mask(mask, grid.z_start+index)
+                # Keep a conditioning section exactly equal to its I result;
+                # video-grid round trips must not erode a reviewed native mask.
+                masks[index] = (conditioning[index]['mask'] if index in conditioning
+                                else grid.native_mask(mask, grid.z_start+index))
                 processed[index] = True
             check_cancelled(cancel)
             if not processed.all():
@@ -366,7 +465,19 @@ class InteractiveSession:
                 metadata.update(status='complete', inference_space='registered_xy' if grid.field else 'original_native_xy',
                                 mask_pixels_per_z=[int(mask.sum()) for mask in masks],
                                 empty_sections=[grid.z_start+i for i, mask in enumerate(masks) if not mask.any()],
-                                directions=['increasing_z', 'decreasing_z'], memory_reset_per_run=True)
+                                directions=['increasing_z', 'decreasing_z'], memory_reset_per_run=True,
+                                initialization='corrected_native_image_masks', conditioning_sections_preserved=True)
+                from probe_em.point_refinement import point_agreement
+                checks = []
+                for index in sorted(conditioning):
+                    z = grid.z_start+index
+                    selected = snapshot['points'][:,2] == z
+                    checks.append(dict(absolute_z=z, **point_agreement(masks[index],
+                        snapshot['points'][selected,:2]-self.offset[:2], snapshot['labels'][selected])))
+                metadata['point_checks_per_section'] = checks
+                counts = {key: sum(check[key] for check in checks) for key in
+                          ('negative_included','negative_points','positive_missed','positive_points')}
+                metadata['point_check'] = counts
                 np.savez_compressed(folder/'prediction.npz', mask_zyx=masks,
                                     frame_z=np.arange(grid.z_start, grid.z_end+1), processed=processed,
                                     points_xyz=snapshot['points'], point_labels=snapshot['labels'])
@@ -375,7 +486,8 @@ class InteractiveSession:
                 with self.viewer.txn() as state:
                     self._render_mask(state, 'sam_preview', self.preview, self.mode['aligned'])
                 empty = len(metadata['empty_sections'])
-                self.status(f'Propagation preview: {count} slices, {empty} empty. Scroll or D/F to inspect; '
+                self.status(f'Propagation preview: {count} slices, {empty} empty. ' + self._point_check_message(counts) +
+                            'Scroll or D/F to inspect; '
                             'Y accepts the full range. Add correction points and V to rerun. ' + HELP)
         except Exception as error:
             if folder.is_dir():
@@ -433,7 +545,7 @@ class InteractiveSession:
             raise ValueError('Run a prediction before accepting')
         if not self._matches(self.preview['snapshot']):
             self._invalidate()
-            raise ValueError('Points changed after prediction; press i to rerun before accepting')
+            raise ValueError('Points changed after prediction; press I or V to rerun before accepting')
         self._check_client_prompts(action, self.preview['snapshot'])
         if not self.preview['mask'].any():
             raise ValueError('Empty masks cannot be accepted; adjust the prompts')

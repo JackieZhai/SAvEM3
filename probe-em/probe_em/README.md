@@ -1,26 +1,19 @@
-# Probe-EM core modules
+# Probe-EM modules
 
-`interactive.py` connects Neuroglancer point annotations to explicit, asynchronous
-image/video prediction and local review artifacts. `prompt_models.py` provides lazy
-SAM/HQ-SAM/SAM2/SAEM2 image adapters and bidirectional SAM2 video memory.
-`propagation.py` retains encoded inputs and maps video prompts/masks between
-registered and original grids, including SOFIMA. See the
-[interactive guide](../README_interactive.md) for controls, coordinates and scope.
+| Module | Responsibility |
+| --- | --- |
+| `interactive.py` | Per-object points, asynchronous image/video inference, previews, and acceptance |
+| `point_refinement.py` | SAM2 candidate selection and mask refinement using positive/negative points |
+| `prompt_models.py` | SAM/HQ-SAM/SAEM²/SAM2 adapters and corrected-mask video initialization |
+| `propagation.py` | Video input grids, frame encoding, and native-coordinate output mapping |
+| `window_browser.py` | Persistent per-window sessions and selector service |
+| `overview.py` | Multiscale image/label layers and process-window boxes |
+| `precomputed_files.py` | Scoped volume serving and disk chunk cache |
+| `viewer_navigation.py`, `viewer_navigation.js` | D/F navigation during mouse dragging |
+| `viewer_status.py` | Live toolbar messages |
+| `sam2_acceleration.py` | Feature cache and optional ONNX encoder |
 
-`window_browser.py` keeps independent review sessions behind a local Previous/Next
-toolbar and selector. `sam2_acceleration.py` provides an optional ONNX encoder and
-a bounded CPU feature cache. Neither caches temporal memory; `PointModel` serializes
-shared model calls. See [test windows](../README_windows.md) and
-[runtime options](../README_acceleration.md) for setup and measurements.
-`overview.py` places ROI boxes in an unregistered full-volume view;
-`precomputed_files.py` streams scoped local files through a persistent chunk cache.
-`viewer_status.py` routes live messages to the compact toolbar without changing
-the native status behavior of standalone demos.
-
-This implementation follows
-[Probe-EM: Targeted Neuron Tracing via Training-Free Semantic Verification](https://arxiv.org/html/2607.04696v1).
-Tracing starts at a seed segment. Models verify candidate connections without
-modifying the original label volume.
+## Tracing and geometry
 
 | Module | Inputs, outputs, and responsibilities |
 | --- | --- |
@@ -34,66 +27,29 @@ modifying the original label volume.
 | `topology.py` | Pre-acceptance candidate skeleton QC; complex labels become review proposals before a budget stop |
 | `runtime.py` | Lazy image/video predictor construction once per tracing task, reused across nodes |
 | `device.py` | CUDA/MPS/CPU selection, two generations of SAM 2 Hydra resources, CUDA AMP |
-| `z_align.py` | Optional historical zebrafish alignment extension; exact uint64 label warping |
-| `demo_alignment.py` | Default-on demo alignment, coordinate/cache validation, expanded grids, synchronized skeleton transforms |
+| `z_align.py` | Affine fields and aligned cutouts; exact uint64 label warping |
+| `demo_alignment.py` | Demo alignment, coordinate/cache validation, expanded grids, synchronized skeleton transforms |
 | `registration.py` | Physical-nm limits, coarse-to-fine ECC, NCC/overlap gates, adjacent/skip-section displacement graph, unobserved-section flags |
 | `sofima_registration.py` | Optional isolated SOFIMA flow/elastic-mesh refinement, physical limits and adjacent-pair quality guards |
 | `alignment_field.py` | Portable affine/elastic field loading, invertible dense coordinates, raw/uint64 resampling and interactive transform artifacts |
 | `meshes.py` | Default near-isotropic mesh sampling from actual resolution; unchanged native slices/origin, uint64 IDs, per-ID fallback, content-addressed geometry cache |
 
-## Coordinate and runtime contracts
+## Coordinates
 
-Raw and segmentation CloudVolumes must share the XYZ grid, resolution, and physical ROI.
-Skeleton vertices are absolute nm. Divide by the selected mip's resolution to obtain
-voxel coordinates, then use the actual resolution ratio to convert back to mip 0.
-Preserve nonzero volume offsets during neighborhood reads. Candidate search uses
-physical distance, not an assumed voxel-axis ratio.
+CloudVolume arrays use XYZ order, skeleton vertices use absolute nanometers,
+and model masks use YX/ZYX order. Preserve resolution and nonzero offsets when
+converting between them. Raw and labels must share a physical grid.
 
-Empty image/video inputs do not load models. MPS/CPU use float32. CUDA AMP takes
-a device type rather than an indexed string such as `cuda:0`. SAM 2 and SAM 2.1
-configurations are not interchangeable by name alone; the resolver checks installed
-resources and preserves newer `configs/sam2.1/...` paths.
+Saved alignment fields map native voxel coordinates into the registered display.
+Images, labels, points, and meshes use the same field. Interactive outputs are
+saved in native coordinates. See [local realignment](../README_alignment.md).
 
-Tracing's historical `align_z` estimator/cache convention targets zebrafish
-`8×8×30 nm` data; disable that automatic path at other resolutions. Registration
-is a local experiment extension, not a required default step of the published algorithms.
+## State and runtime
 
-Demo alignment estimates from the loaded local ROI at its actual resolution.
-It defaults on and can be disabled with `--no-align-z`. Both paths share per-section
-transforms and exact-ID warping; rotations correctly account for nonzero cutout origins.
-New demo translation uses `physical-pyramid-graph-v3.2` and does not identify v2
-caches as new-algorithm results. The tracer's automatic estimator remains historical;
-to trace with a new field, explicitly supply its NPZ and use a new result directory.
-See the [alignment investigation](../README_alignment.md).
-The [SOFIMA backend](../README_sofima.md) adds nonrigid residual grids through an
-optional worker. The same saved field is used for images, labels, points, skeletons
-and tracing cutouts; inference and saved masks retain original native coordinates.
+One shared model serializes image/video calls across windows. Each controller
+owns its points, correction history, and results; each propagation starts fresh
+temporal memory. The bounded feature cache stores image features only.
 
-Mesh resolution is independent of image/label slice resolution. Every new local
-demo automatically selects near-isotropic factors from its own XYZ metadata;
-8×8×30 nm becomes 32×32×30 nm for mesh generation only. Small labels missing after
-sampling are meshed natively and flagged, while thin branches may still change.
-Use `--no-mesh-isotropic` to opt out. See the
-[mesh policy and cache contract](../scripts/README.md#near-isotropic-meshes-default-for-every-dataset).
-
-## Tracing states and resume
-
-Each seed directory contains `status.json`, `trace_state.json`, original ID sets,
-and a merge tree. States are `running`, `complete`, `limited` (node budget), and
-`failed`. A directory's existence does not imply completion. Exceptions record the
-failing segment and cause the batch CLI to return a nonzero status.
-
-`--resume` restores stack/visited/accepted/edges under a matching configuration
-and retries failed nodes. Use a new output directory when changing data or checkpoints.
-PEC samples from repeatable seed-plus-segment random sequences, so resume order
-does not change a node's prompt samples.
-
-`voxel_threshold` is a retained historical field: voxel counts from precomputed
-skeletons are still incomplete, so this is not an effective voxel-volume filter.
-Topology pruning uses endpoint count/density; guarded density pruning also
-requires >15 endpoints. `complete` denotes queue exhaustion, not a verified
-complete neuron. See [tracing quality](../README_trace_quality.md).
-
-The paper uses NeuroSAM 2. Standard SAM 2 checkpoints support compatibility and
-workflow demos, not reproduction of its quality claims. See the
-[scripts guide](../scripts/README.md) and [configuration guide](../configs/README.md).
+Tracing records running, complete, limited, and failed states. Resume requires
+matching data and configuration. See [verification](../README_trace_quality.md)
+and [configuration](../configs/README.md).

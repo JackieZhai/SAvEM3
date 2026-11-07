@@ -1,7 +1,7 @@
 """Local Neuroglancer demo: raw, input instances, Probe-EM trace, editable review.
 
 Use --local-dir volumes_local with the existing zebrafish cache, or a volume
-bundle from export_savem3.py. Local alignment is ON by default; --no-align-z
+bundle from export_savem3.py. Local realignment is ON by default; --no-align-z
 skips it. No raw/seg data is fetched from a remote server.
 Meshes default to near-isotropic sampling; slices retain native resolution.
 """
@@ -178,7 +178,8 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
             state.layers[name].visible = False
         if skeleton_layers:
             state.layers['skeletons'] = skeleton_layers[mode['aligned']]
-        state.layout = '4panel'
+        state.layout = '4panel-alt'
+        state.show_axis_lines = True
         state.show_slices = False  # Hide slice planes in 3D; keep the three 2D views.
         points = np.argwhere(seg == seed)
         position = (points[len(points) // 2] + seg_offset).astype(float)
@@ -196,12 +197,14 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
             if backend == 'SOFIMA':
                 count = sum(bool(np.any(section)) for section in field.displacement)
                 backend += f'; elastic refinement on {count}/{len(field.displacement)} sections'
+            elif field_info.get('quality_summary', {}).get('preserve_global_trend'):
+                backend += '; global trend preserved'
             suffix += f' [{backend}]'
         mesh_resolution = meshes['original']['mesh_resolution_xyz_nm']
         mesh_scale = 'x'.join(f'{value:g}' for value in mesh_resolution)
-        status(f'Seed {seed}: {len(present)} segments. Local alignment: {suffix}. '
+        status(f'Seed {seed}: {len(present)} segments. Local realignment: {suffix}. '
                f'Mesh grid: {mesh_scale} nm (tiny missing IDs: native fallback). '
-               'a: compare alignment; r: restore result; q: restore review; g: save review. '
+               'R: toggle local realignment; Shift+R: restore result; Q: restore review; G: save review. '
                f'{len(missing)} traced IDs outside original ROI.')
 
     def toggle_alignment(_):
@@ -210,7 +213,7 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
 
     def toggle_alignment_locked():
         if field is None:
-            status('Alignment was disabled at startup. Restart without --no-align-z to enable comparison.')
+            status('Local realignment was disabled at startup. Restart without --no-align-z to enable it.')
             return
         new_mode = not mode['aligned']
         with viewer.txn() as state:
@@ -271,10 +274,11 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
     viewer.actions.add('restore-result', restore_result)
     viewer.actions.add('save-review', save)
     with viewer.config_state.txn() as state:
-        state.input_event_bindings.viewer['keya'] = 'toggle-alignment'
-        state.input_event_bindings.viewer['keyq'] = 'restore-trace'
-        state.input_event_bindings.viewer['keyr'] = 'restore-result'
-        state.input_event_bindings.viewer['keyg'] = 'save-review'
+        for bindings in (state.input_event_bindings.viewer, state.input_event_bindings.slice_view):
+            bindings['keyr'] = 'toggle-alignment'
+            bindings['shift+keyr'] = 'restore-result'
+            bindings['keyq'] = 'restore-trace'
+            bindings['keyg'] = 'save-review'
     mode_status()
     if interactive is not None:
         from probe_em.interactive import InteractiveSession
@@ -420,7 +424,7 @@ def main():
     url = viewer.get_viewer_url()
     (output / 'viewer_url.txt').write_text(url + '\n', encoding='utf-8')
     print(f'Neuroglancer demo: {url}', flush=True)
-    print('Keep this process running. a: toggle alignment; r: restore result; '
+    print('Keep this process running. R: toggle local realignment; Shift+R: restore result; '
           'enable manual_correction to edit; q restores review, g saves.', flush=True)
     if args.interactive:
         from probe_em.interactive import HELP

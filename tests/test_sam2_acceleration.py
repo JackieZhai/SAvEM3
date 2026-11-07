@@ -91,7 +91,8 @@ def test_encoder_rejects_mismatched_checkpoint_and_corrupt_artifacts(tmp_path, m
     assert runtime.session is None
 
 
-def test_shared_model_keeps_each_window_image_and_points_together(tmp_path, monkeypatch):
+@pytest.mark.parametrize('refined', [False, True])
+def test_shared_model_keeps_each_window_image_and_points_together(tmp_path, monkeypatch, refined):
     from probe_em.prompt_models import PointModel
     path = tmp_path/'checkpoint.pt'
     path.write_bytes(b'local predictor fixture')
@@ -103,14 +104,17 @@ def test_shared_model_keeps_each_window_image_and_points_together(tmp_path, monk
 
         def predict(self, **_):
             time.sleep(.002)
-            return np.full((1, 3, 4), self.value, bool), np.array([.8]), None
+            mask = np.full((1,3,4), self.value, bool)
+            mask[0,1,1] = True
+            return mask, np.array([.8]), np.full((1,256,256),self.value,np.float32)
 
     monkeypatch.setattr(model, '_load', lambda: setattr(model, 'predictor', Predictor()))
 
     def run(index):
         value = bool(index % 2)
-        mask, _ = model.predict(np.full((3, 4, 3), value, np.uint8), np.array([[1, 1]]), np.array([1]))
-        return bool(np.all(mask == value))
+        arguments = (np.full((3,4,3),value,np.uint8),np.array([[1,1]]),np.array([1]))
+        mask = model.predict_refined(*arguments)['mask'] if refined else model.predict(*arguments)[0]
+        return bool(mask[0,0] == value and mask[1,1])
 
     with ThreadPoolExecutor(max_workers=4) as executor:
         assert all(executor.map(run, range(24)))

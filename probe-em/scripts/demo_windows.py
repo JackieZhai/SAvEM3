@@ -55,6 +55,10 @@ def main():
                 name: (volumes.register(f'overview_{index}_image_{number}', path),
                        f'overview_{index}_image_{number}')
                 for number, (name, path) in enumerate(item['image_layers'].items())}
+            overview_info[index]['labels'] = {
+                name: (volumes.register(f'overview_{index}_label_{number}', path),
+                       f'overview_{index}_label_{number}')
+                for number, (name, path) in enumerate(item['label_layers'].items())}
     options = dict(backend='sam2', checkpoint=args.checkpoint, model_config=args.model_config, device=args.device,
                    sam2_runtime=args.sam2_runtime, onnx_dir=args.sam2_onnx_dir, onnx_provider=args.onnx_provider,
                    onnx_threads=args.onnx_threads, feature_cache_mb=args.feature_cache_mb)
@@ -69,7 +73,10 @@ def main():
             viewer, report = build_overview(item, windows, overview_info[index]['raw'], overview_info[index]['seg'],
                                            sources['raw'], sources['seg'], image_sources={
                                                name: (info, f'precomputed://{url}data/{mount}')
-                                               for name, (info, mount) in overview_info[index]['images'].items()})
+                                               for name, (info, mount) in overview_info[index]['images'].items()},
+                                           label_sources={
+                                               name: (info, f'precomputed://{url}data/{mount}')
+                                               for name, (info, mount) in overview_info[index]['labels'].items()})
             publish(viewer, report, folder, item, index)
             return viewer
         viewer, report = build_viewer(item['local_dir'], item.get('traced_ids', []), item['seed'],
@@ -100,7 +107,7 @@ def main():
                 state.cross_section_scale = max(session.raw.shape[:2])/470
                 state.projection_scale = max(session.raw.shape[:2])*1.6
                 state.projection_orientation = [.2, .3, 0, .9327379053088815]
-                state.show_axis_lines = False
+                state.show_axis_lines = True
                 state.show_default_annotations = False
                 if 'visible_layers' in item:
                     names = {layer.name for layer in state.layers}

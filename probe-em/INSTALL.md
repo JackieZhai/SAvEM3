@@ -1,9 +1,9 @@
 # Installation
 
-Use a fresh environment so historical Demo environments remain reproducible.
+Install Probe-EM in a separate Python environment.
 Python 3.12 is recommended; the pinned Torch pair requires Python >=3.10.
 Commands below run from the repository root unless stated otherwise.
-See [the security audit](../docs/SECURITY_AUDIT.md) for the upgrade scope and limits.
+See [dependencies](../docs/DEPENDENCIES.md) for environment maintenance.
 
 ## Conda Environment
 
@@ -25,7 +25,6 @@ For Linux/Windows CPU-only machines, use `--index-url https://download.pytorch.o
 For macOS Apple Silicon, omit the index option. The macOS wheels require macOS 14+.
 Do not keep an old cu118/cu124 wheel index or install mismatched Torchvision wheels.
 Other accelerator builds must follow the [official version matrix](https://pytorch.org/get-started/previous-versions/).
-CUDA installation choices are not evidence that CUDA inference was tested locally.
 Torchaudio is not required by this repository or SAM 2 and is intentionally omitted.
 
 ## SAM 2
@@ -80,5 +79,5 @@ CUDA device is available.
 For the SAEM2/HQ-SAM comparison, also install `probe-em/requirements-saem2.txt`.
 Run `python -m pytest -q tests/` from the repository root after installing pytest
 and configuring the optional real-checkpoint environment variables documented in
-[the validation record](../docs/VALIDATION.md). Native ELF/WaterZ tests belong in
+[the testing guide](../docs/TESTING.md). Native ELF/WaterZ tests belong in
 the separate postprocessing environment, not this Torch environment.

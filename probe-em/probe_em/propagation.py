@@ -75,3 +75,12 @@ class PropagationGrid:
         result = np.zeros(x.size, bool)
         result[valid] = mask[xy[valid, 1], xy[valid, 0]]
         return result.reshape(self.raw.shape[:2]).T
+
+    def video_mask(self, mask_yx, z):
+        """Map a native image prediction into the registered video frame."""
+        mask = np.asarray(mask_yx)
+        if (mask.shape != self.raw.shape[:2][::-1] or not np.isin(mask, [0, 1]).all()
+                or not self.z_start <= z <= self.z_end):
+            raise ValueError('Conditioning mask must cover a native section inside the video range')
+        return warp_field_slice(self.field, mask.T.astype(np.uint8), z,
+                                self.offset[:2], self.origin, self.shape, seg=True).T.astype(bool)

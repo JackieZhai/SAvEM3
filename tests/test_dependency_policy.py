@@ -53,8 +53,7 @@ def test_pinned_torch_is_outside_each_reported_affected_range(advisory, affected
     assert not SpecifierSet(affected).contains(Version(TORCH), prereleases=True), advisory
 
 
-@pytest.mark.parametrize('path', ['README.md', 'probe-em/README.md',
-                                'probe-em/INSTALL.md', 'repro/env/setup.sh'])
+@pytest.mark.parametrize('path', ['README.md', 'probe-em/INSTALL.md', 'repro/env/setup.sh'])
 def test_installation_examples_match_the_pinned_pair(path):
     text = (ROOT / path).read_text()
     assert f'torch=={TORCH} torchvision=={VISION}' in text

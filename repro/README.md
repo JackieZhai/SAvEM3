@@ -1,8 +1,8 @@
 # repro/
 
-Executable reproduction scripts for SAEM²-SAEvM³.
+Training and inference scripts for SAEM²-SAEvM³.
 
-See the [reproduction guide](../docs/REPRODUCTION.md) for the recommended workflow and validated scope.
+See the [workflow guide](../docs/WORKFLOW.md) for training and inference.
 Module guides: [data engine](data_engine/README.md), [SAEM² preparation](saem2/README.md),
 [three-target distillation](savem3/README.md), [prompt graph cut](graph_cut/README.md),
 [evaluation/ROI inference](evaluate/README.md), [environments](env/README.md), and [MPS compatibility](mps_adapt/README.md).

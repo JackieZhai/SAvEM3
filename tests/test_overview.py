@@ -37,6 +37,8 @@ def test_overview_bounds_use_physical_coordinates_and_remain_unregistered(tmp_pa
                                     'precomputed://http://localhost/raw', 'precomputed://http://localhost/lc')
     assert report['alignment'] == {'enabled': False}
     assert viewer.state.show_slices is False
+    assert viewer.state.show_axis_lines is True
+    assert viewer.state.to_json()['layout'] == '4panel-alt'
     annotation = viewer.state.layers['test_windows'].annotations[0]
     np.testing.assert_array_equal(annotation.point_a, [16, 30, 50])
     assert annotation.description == 'Neuron A'
@@ -88,6 +90,29 @@ def test_status_moves_to_toolbar_and_remains_live_per_viewer():
                                {'id': 'prediction', 'text': 'Propagation range: z=10..18'}]
     assert not first.config_state.state.status_messages
     assert second.config_state.state.status_messages['alignment'] == 'Local alignment: OFF'
+
+
+def test_overview_label_context_preserves_type_and_checks_extent():
+    item = dict(name='LC-NE test overview', raw_path='raw', seg_path='lc',
+                kind='overview', visible_layers=['lcpre'])
+    sources = {name: (info(kind='segmentation'), f'precomputed://http://localhost/{name}')
+               for name in ('lcpre', 'lcsyn')}
+    viewer, report = build_overview(item, [item], info(), info(kind='segmentation'),
+                                    'raw', 'lc', label_sources=sources)
+    assert report['label_layers'] == ['lcpre', 'lcsyn']
+    assert viewer.state.layers['lcpre'].to_json()['type'] == 'segmentation'
+    assert viewer.state.layers['lcpre'].visible
+    assert not viewer.state.layers['lcsyn'].visible
+    for invalid, message in [({'lcpre': (info(), 'source')}, 'segmentation volumes'),
+                             ({'lc': (info(kind='segmentation'), 'source')}, 'distinct names'),
+                             ({'lcpre': (info(size=(2, 3, 4), kind='segmentation'), 'source')},
+                              'same physical volume')]:
+        with pytest.raises(ValueError, match=message):
+            build_overview(item, [item], info(), info(kind='segmentation'),
+                           'raw', 'lc', label_sources=invalid)
+    with pytest.raises(ValueError, match='distinct names'):
+        build_overview(item, [item], info(), info(kind='segmentation'), 'raw', 'lc',
+                       image_sources={'lcpre': (info(), 'image')}, label_sources=sources)
 
 
 def test_chunk_cache_deduplicates_reads_and_rejects_path_escape(tmp_path, monkeypatch):

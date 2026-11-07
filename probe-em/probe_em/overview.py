@@ -1,4 +1,4 @@
-"""Unregistered multiscale overview and physical bounds of cached test ROIs."""
+"""Multiscale dataset overview and physical bounds of cached test ROIs."""
 import json
 from pathlib import Path
 
@@ -40,7 +40,8 @@ def roi_boxes(windows, overview_info):
     return boxes
 
 
-def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url, image_sources=None):
+def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url,
+                   image_sources=None, label_sources=None):
     resolution, offset, size = geometry(raw_info)
     seg_resolution, seg_offset, seg_size = geometry(seg_info)
     if not (np.allclose(offset*resolution, seg_offset*seg_resolution)
@@ -53,13 +54,17 @@ def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url, image_so
         raise ValueError('Overview segments must be positive uint64 integers')
     viewer = neuroglancer.Viewer()
     image_sources = image_sources or {}
-    for name, (info, _) in image_sources.items():
-        if name in {'raw', 'lc', 'test_windows'} or info.get('type') != 'image':
-            raise ValueError('Overview context layers need distinct names and image volumes')
-        context_resolution, context_offset, context_size = geometry(info)
-        if not (np.allclose(context_offset*context_resolution, offset*resolution)
-                and np.allclose((context_offset+context_size)*context_resolution, (offset+size)*resolution)):
-            raise ValueError(f'Overview context layer {name!r} must cover the same physical volume as raw')
+    label_sources = label_sources or {}
+    names = {'raw', 'lc', 'test_windows'}
+    for sources, kind in ((image_sources, 'image'), (label_sources, 'segmentation')):
+        for name, (info, _) in sources.items():
+            if name in names or info.get('type') != kind:
+                raise ValueError(f'Overview context layers need distinct names and {kind} volumes')
+            names.add(name)
+            context_resolution, context_offset, context_size = geometry(info)
+            if not (np.allclose(context_offset*context_resolution, offset*resolution)
+                    and np.allclose((context_offset+context_size)*context_resolution, (offset+size)*resolution)):
+                raise ValueError(f'Overview context layer {name!r} must cover the same physical volume as raw')
     with viewer.txn() as state:
         state.dimensions = dimensions
         state.layers['raw'] = neuroglancer.ImageLayer(source=raw_url)
@@ -68,6 +73,10 @@ def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url, image_so
                                                           hover_highlight=False)
         for name, (_, source) in image_sources.items():
             state.layers[name] = neuroglancer.ImageLayer(source=source)
+            state.layers[name].visible = name in item.get('visible_layers', [])
+        for name, (_, source) in label_sources.items():
+            state.layers[name] = neuroglancer.SegmentationLayer(source=source,
+                                                              hover_highlight=False)
             state.layers[name].visible = name in item.get('visible_layers', [])
         state.layers['test_windows'] = neuroglancer.LocalAnnotationLayer(
             dimensions=dimensions, annotation_color='#ffcb52',
@@ -78,9 +87,9 @@ def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url, image_so
         state.cross_section_scale = max(size*resolution)/(resolution[0]*600)
         state.projection_scale = 1.6*max(size*resolution)/resolution[0]
         state.projection_orientation = [.2, .3, 0, .9327379053088815]
-        state.layout = '4panel'
+        state.layout = '4panel-alt'
         state.show_slices = False
-        state.show_axis_lines = False
+        state.show_axis_lines = True
         state.show_default_annotations = False
 
     def navigate(action, step):
@@ -93,13 +102,15 @@ def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url, image_so
 
     viewer.actions.add('overview-previous-section', lambda action: navigate(action, -1))
     viewer.actions.add('overview-next-section', lambda action: navigate(action, 1))
+    from probe_em.viewer_navigation import install_section_navigation
+    install_section_navigation(viewer, int(offset[2]), int(offset[2]+size[2])-1)
     with viewer.config_state.txn() as state:
         for scope in (state.input_event_bindings.viewer, state.input_event_bindings.slice_view):
             scope['keyd'] = 'overview-previous-section'
             scope['keyf'] = 'overview-next-section'
     set_status(viewer, 'overview',
                f'{item["name"]}: full raw and lc volume. Local alignment: OFF. '
-               f'{len(boxes)} test-window boxes in original coordinates. Data cached as viewed.')
+               f'{len(boxes)} test-window boxes in dataset coordinates. Data cached as viewed.')
     set_status(viewer, 'overview-navigation',
                'D/F: previous/next slice. Select a test window for point prediction and SAM2 propagation.')
     report = {'kind': 'overview', 'alignment': {'enabled': False}, 'show_slices': False,
@@ -107,5 +118,6 @@ def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url, image_so
               'shape_xyz': size.astype(int).tolist(), 'boxes': boxes, 'segments': segments,
               'raw_source': item['raw_path'], 'seg_source': item['seg_path'],
               'image_layers': list(image_sources),
-              'meshes': 'Existing unregistered precomputed lc meshes; no new whole-volume meshing'}
+              'label_layers': list(label_sources),
+              'meshes': 'Precomputed meshes supplied with the dataset'}
     return viewer, report

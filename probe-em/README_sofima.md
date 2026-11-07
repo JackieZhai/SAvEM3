@@ -1,14 +1,8 @@
 # Optional SOFIMA local registration
 
-`--align-backend sofima` adds nonrigid registration to the local Neuroglancer
-demo. The default remains `ecc`, with the existing robust translation graph.
-Registration itself is still enabled by default. Both backends preserve the
-`showSlices: false` and metadata-driven near-isotropic mesh defaults.
-
-This adapter uses the real [SOFIMA flow estimator and elastic mesh solver](https://github.com/google-research/sofima),
-following its [EM section-alignment example](https://github.com/google-research/sofima/blob/main/notebooks/em_alignment.ipynb).
-It is a bounded ROI implementation with additional quality controls, not the
-upstream distributed/block alignment pipeline or a reproduction of its accuracy.
+`demo.py --align-backend sofima` estimates a local elastic field using
+[SOFIMA](https://github.com/google-research/sofima). Use this option for a bounded
+raw/label cache. Opening the supplied LC-NE test fields does not require SOFIMA.
 
 ## Install the optional worker
 
@@ -24,9 +18,9 @@ python3.12 -m venv /path/to/sofima-env
 ```
 
 The requirements pin SOFIMA commit `c8b5e254a9b031a9c00f3d399e47bafda3c96a22`
-and the tested JAX CPU stack. On Apple Silicon this worker uses CPU; it does not
+and a JAX CPU stack. On Apple Silicon this worker uses CPU; it does not
 use PyTorch's MPS backend. The viewer and SAM predictors continue to run in their
-own existing environment. CUDA/JAX GPU installation is not validated here.
+own environment.
 
 ## Select the backend
 
@@ -34,7 +28,7 @@ In the usual Probe-EM/Torch environment:
 
 ```bash
 python probe-em/scripts/demo.py \
-  --local-dir /path/to/cached_volumes --seed 1459916967 \
+  --local-dir /path/to/cached_volumes --seed 30001 \
   --results-dir /path/to/trace_results \
   --align-backend sofima --sofima-python /path/to/sofima-env/bin/python \
   --output-dir .cache/demo-sofima
@@ -44,22 +38,10 @@ The interactive mode uses the same selector. Replace `--results-dir` with the
 `--interactive --prompt-backend ... --prompt-checkpoint ...` arguments from the
 [interactive guide](README_interactive.md) if no completed trace is available.
 P/N prompts, prediction masks, skeletons and raw/segmentation layers all follow
-the selected nonrigid field. A toggles all of them between registered and original
+the selected nonrigid field. R toggles local realignment for all of them between registered and original
 space. I image inference uses native original image pixels. V video propagation
 uses the selected display space at task start and saves masks back in native
 coordinates; its registered inputs include the SOFIMA nonlinear correction.
-
-For the four existing cached regions, run from `probe-em/`:
-
-```bash
-python scripts/demo_regions.py serve --align-backend sofima \
-  --sofima-python /path/to/sofima-env/bin/python --open
-```
-
-This estimates separate fields under each region's `alignment_sofima/` and writes
-`viewers_sofima.json`. Existing ECC fields and viewer artifacts remain available.
-`--legacy-alignment` is an ECC-only option. The region viewer holds trace IDs
-fixed; changing display registration does not recompute tracing decisions.
 
 `--align-motion` continues to control ECC's translation/euclidean/affine model.
 SOFIMA uses translation initialization and therefore requires the default
@@ -135,15 +117,11 @@ hashes and worker dependency versions. Field NPZ files contain numeric/string
 arrays only and load with `allow_pickle=False`. Sidecar JSON records all accepted,
 rejected and inferred sections, solver results and final per-section strengths.
 
-The generic `demo.py`, `demo_regions.py serve`, and `AlignedVolume` support the
-new field. Tracing can consume an explicitly selected saved field through
-`align_z_field`; the automatic tracing estimator remains the historical ECC path.
-Dense cutouts are restricted to the fitted ROI. Historical affine-only diagnostic
-scripts (`investigate_alignment.py`, `optimize_demo_alignment.py`, `try_saem2.py`,
-and the old tracing-quality plot exporter) require their original affine fields.
-They fail explicitly if given an elastic NPZ.
+`demo.py`, `demo_windows.py`, and `AlignedVolume` load saved elastic fields.
+Tracing accepts an explicit field through `align_z_field`. Dense cutouts must
+remain inside the field's estimated domain.
 
-## Reproducible local comparison
+## Compare local fields
 
 ```bash
 python probe-em/scripts/compare_alignment.py \
@@ -162,54 +140,3 @@ Tests cover invertibility, fold rejection, uint64 labels, expanded cutouts,
 interactive point/overlay consistency, field serialization and actual SOFIMA
 execution through the isolated worker. Set `SAVEM3_SOFIMA_PYTHON` when running
 `tests/test_sofima_alignment.py` to include the real flow/mesh/cache test.
-
-## Local validation (2026-11-04)
-
-All four previously selected online zebrafish ROIs were reused from local disk,
-at their complete 500x500x100 size and 8x8x30 nm resolution. No data was downloaded
-again. The final default settings produced these adjacent-section NCC results;
-all three methods use identical valid pixels within each comparison:
-
-| Cached ROI | Unregistered | ECC | ECC + SOFIMA | Sections with nonzero elastic residual |
-| --- | ---: | ---: | ---: | ---: |
-| region_1 | 0.13361 | 0.36799 | 0.37014 | 41/100 |
-| region_2 | 0.18925 | 0.39280 | 0.40036 | 65/100 |
-| region_3 | 0.26324 | 0.39874 | 0.40029 | 53/100 |
-| region_4 | 0.21266 | 0.43851 | 0.44085 | 62/100 |
-
-The extra gain is modest. Some individual pairs regress (worst -0.00999 NCC);
-this is bounded, not a claim that every pair improves. Strength selection itself
-uses NCC, so these are internal consistency checks, not an independent accuracy
-evaluation. No landmark ground truth or downstream merge/split assessment was
-performed. ECC therefore remains the default.
-
-The initial unguarded region_1 trial decreased NCC from 0.3681 to 0.3519 despite
-many locally accepted refinements. Abrupt translation-only fallback sections and
-residual drift motivated zero-mean meshes, explicit residual inference and the
-final adjacent-pair guards. Preserved initial/global-strength trials document
-these unsuccessful alternatives; they are not mixed into the final table.
-
-Final shared support was 84.7-92.4%; the minimum Jacobian across all four fields
-was 0.9847. Round-trip error stayed below 2.7e-7 voxels on a 5x5 grid over every
-section. No label IDs were introduced or lost in these four resampled volumes.
-That observation does not guarantee preservation of smaller instances in other data.
-Numeric fields, full QC and comparison JSON are retained locally under
-`.cache/sofima-20261104/region_{1..4}_selected/`, separate from historical fields.
-
-The complete regression suite passed 142 tests with 4 native-package skips and
-9 third-party warnings. It included real SAM/HQ-SAM/SAEM2/SAM2 CPU weights and
-the isolated SOFIMA worker. The 12 SOFIMA tests include real nonzero elastic
-refinement, safe rejection, geometry, large labels and interactive coordinates.
-`pip check` passed in the worker environment. Its dependency audit found zero
-known vulnerabilities among 54 audited distributions; the local SOFIMA development
-version was skipped by the advisory service. This is not an audit of upstream source.
-
-A Chrome/WebGL session on region_1 used a section with a nonzero SOFIMA residual
-and real SAM2/MPS inference: P/N -> I -> A -> A -> Y. It produced a nonempty mask,
-kept the positive prompt inside and the negative prompt outside, and saved the
-native mask plus actual dense display transform. Reprojected saved points matched
-the displayed annotations; screenshots verified visible raw data and the mask.
-There were no JavaScript exceptions. `showSlices=false`, registration enabled,
-and 32x32x30 nm mesh defaults were retained. Browser evidence and accepted test
-artifacts are under `.cache/sofima-20261104/interactive-demo/`. This checks the
-interactive coordinate/rendering path, not segmentation accuracy.

@@ -1,7 +1,7 @@
 # SAvEM³ teacher export, distillation, and postprocessing
 
 Use these standalone entry points for new experiments. See the
-[reproduction guide](../../docs/REPRODUCTION.md) for the full workflow and paper differences.
+[workflow guide](../../docs/WORKFLOW.md) for training and inference.
 
 | Entry point | Input | Output |
 | --- | --- | --- |

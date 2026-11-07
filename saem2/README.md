@@ -3,7 +3,7 @@
 SAEM² auxiliary pretraining for EM neuron segmentation. This directory contains the
 training, data-preparation, and evaluation scripts described in the SAvEM³ paper.
 
-See the [reproduction contract](../docs/REPRODUCTION.md). `modeling.py` extracts the shared
+See the [training workflow](../docs/WORKFLOW.md). `modeling.py` extracts the shared
 `MaskDecoderHQ` (HQ + membrane token) from the trainer while retaining parameter names compatible
 with historical `epoch_N.pth` checkpoints. Teacher export strictly loads the trained membrane head;
 a standard HQ-SAM checkpoint cannot replace SAEM² membrane weights.
@@ -24,9 +24,8 @@ and center-cropped 1024² field of view.
   not a SAM2 video predictor.
 - `membrane.py`: naive threshold-component diagnostic, not the recommended 3D path.
 
-The [five-ROI SAEM2 trial](../probe-em/README_saem2_trial.md) compares historical
-ViT-B weights with HQ-SAM/SAM2, then tests membrane-driven bounded 3D multicut.
-Checkpoint training provenance and biological accuracy remain unverified.
+The [SAEM² image backend](../probe-em/README_saem2.md) supports point-guided
+image prediction in Neuroglancer.
 
 ## Setup
 

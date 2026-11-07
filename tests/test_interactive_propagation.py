@@ -19,10 +19,10 @@ def video_stub(session, monkeypatch, *, started=None, release=None):
     session.model.backend = 'sam2'
     calls = []
 
-    def propagate(folder, prompts, *, cancel, progress):
+    def propagate(folder, prompts, *, cancel, progress, mask_inputs=None):
         frames = sorted(Path(folder).glob('*.jpg'))
         shape = np.asarray(Image.open(frames[0])).shape[:2]
-        calls.append((frames, prompts))
+        calls.append((frames, prompts, mask_inputs))
         if started is not None:
             started.set()
             assert release.wait(10)
@@ -55,6 +55,8 @@ def test_volume_actions_preserve_prompts_geometry_and_accept_complete_native_sta
     metadata = json.loads((result['folder']/'metadata.json').read_text())
     assert metadata['inference_space'] == 'registered_xy'
     assert metadata['z_range_inclusive'] == [300, 302] and metadata['status'] == 'complete'
+    assert metadata['initialization'] == 'corrected_native_image_masks'
+    assert metadata['point_check']['positive_missed'] == 0
     assert (result['folder']/'alignment.npz').is_file()
     original_mask = result['mask'].copy()
     for _ in range(2):
@@ -72,6 +74,34 @@ def test_volume_actions_preserve_prompts_geometry_and_accept_complete_native_sta
     session.future.result(timeout=15)
     assert session.preview['snapshot']['scope'] == 'image' and session.accepted is result
     assert len(session.viewer.state.layers['positive_points'].annotations) == 2
+
+
+@pytest.mark.parametrize('registered', [False, True])
+def test_video_conditions_on_exact_image_result_and_retains_point_corrections(session, monkeypatch, registered):
+    calls = video_stub(session, monkeypatch)
+    point(session,[106,207,301])
+    point(session,[114,214,301],0)
+    action(session,'prompt-run');session.future.result(timeout=15)
+    image = session.preview
+    if not registered:
+        action(session,'toggle-alignment')
+    action(session,'prompt-propagate');session.future.result(timeout=15)
+    video = session.preview
+    np.testing.assert_array_equal(video['mask'][1],image['mask'])
+    assert len(session.model.calls) == 1
+    grid = PropagationGrid(session.raw,session.offset,300,302,
+        field=session.field if registered else None,shape=session.aligned_shape,origin=session.aligned_offset)
+    np.testing.assert_array_equal(calls[0][2][1],grid.video_mask(image['mask'],301))
+    metadata = json.loads((video['folder']/'metadata.json').read_text())
+    assert metadata['conditioning_masks'][0]['reused_image_prediction'] is True
+    assert metadata['conditioning_masks'][0]['prediction_dir'] == str(image['folder'])
+    assert metadata['point_check']['negative_included'] == 0
+    assert metadata['point_check']['negative_points'] == 1
+    point(session,[115,213,301],0)
+    action(session,'prompt-propagate');session.future.result(timeout=15)
+    assert len(session.model.calls) == 2
+    metadata = json.loads((session.preview['folder']/'metadata.json').read_text())
+    assert metadata['conditioning_masks'][0]['reused_image_prediction'] is False
 
 
 def test_video_range_backend_and_positive_anchor_validation_precede_model_loading(session, monkeypatch):
@@ -150,6 +180,7 @@ def test_video_grid_maps_dense_prompts_and_masks_back_to_native(tmp_path, regist
     native = raw[:, :, 1] > 0
     displayed = warp_field_slice(field, native.astype(np.uint8), 301, [100, 200], grid.origin, grid.shape, seg=True)
     recovered = grid.native_mask(displayed.T, 301)
+    np.testing.assert_array_equal(grid.video_mask(native.T,301),displayed.T.astype(bool))
     assert 2*np.count_nonzero(recovered & native.T)/(recovered.sum()+native.sum()) > .95
     assert recovered[9, 8]
     x, y = np.rint(prompts[1][0][0]).astype(int)
@@ -190,3 +221,34 @@ def test_real_sam2_forward_reverse_video_cancellation_and_fresh_memory(tmp_path,
         reference = dict(fresh.propagate(tmp_path, prompts, cancel=threading.Event()))
         for index, mask in corrected:
             np.testing.assert_array_equal(mask, reference[index])
+
+
+@pytest.mark.skipif(not os.environ.get('PROBE_EM_SAM2_CHECKPOINT'), reason='No local SAM2 checkpoint configured')
+def test_real_sam2_uses_corrected_masks_as_video_conditions(tmp_path, monkeypatch):
+    import torch
+    from probe_em.prompt_models import PointModel
+    torch.set_num_threads(2)
+    for index in range(3):
+        image = np.full((48,64,3),127,np.uint8)
+        image[15:30,20+index:40+index] = 60
+        Image.fromarray(image).save(tmp_path/f'{index:05d}.jpg',quality=100,subsampling=0)
+    model = PointModel('sam2',os.environ['PROBE_EM_SAM2_CHECKPOINT'],model_config='sam2_hiera_t.yaml',
+                       device=os.environ.get('SAVEM3_TEST_DEVICE','cpu'))
+    predictor = model._sam2().video()
+    original = predictor.add_new_mask
+    calls = []
+
+    def add_mask(state, *, frame_idx, obj_id, mask):
+        calls.append((frame_idx,mask.copy()))
+        return original(state,frame_idx=frame_idx,obj_id=obj_id,mask=mask)
+
+    monkeypatch.setattr(predictor,'add_new_mask',add_mask)
+    point_method = 'add_new_points_or_box' if hasattr(predictor,'add_new_points_or_box') else 'add_new_points'
+    monkeypatch.setattr(predictor,point_method,lambda *args,**kwargs: pytest.fail('Points replaced the corrected mask'))
+    corrected = np.zeros((48,64),bool)
+    corrected[17:29,22:38] = True
+    frames = dict(model.propagate(tmp_path,{1:(np.array([[30,22],[4,4]]),np.array([1,0]))},
+                                  mask_inputs={1:corrected},cancel=threading.Event()))
+    assert set(frames) == {0,1,2} and len(calls) == 1 and calls[0][0] == 1
+    np.testing.assert_array_equal(calls[0][1],corrected)
+    np.testing.assert_array_equal(frames[1],corrected)

@@ -18,9 +18,9 @@ Machine-specific configurations are local-only and are not rewritten by the demo
 | `random_seed` | Default 42; repeatable per-segment prompt sampling |
 | `output_root`, `suffix` | Output location and experiment suffix; use a new directory for different data/models |
 | `resume` | Default false; also available as CLI `--resume` |
-| `verification_policy` | Default `guarded`: PEC identity and ASP candidate/temporal/precision/reverse-cycle gates; `paper` retains historical thresholds/preparation with common fixes |
-| `keep_inputs` | Default false; the quality investigation uses true to retain model inputs |
-| `align_z` | Tracing default false; the historical automatic estimator assumes zebrafish resolution |
+| `verification_policy` | Default `guarded`: PEC identity and ASP candidate/temporal/precision/reverse-cycle gates; `paper` uses the original PEC/ASP thresholds |
+| `keep_inputs` | Default false; set true to retain model inputs |
+| `align_z` | Tracing default false; automatic estimation assumes 8 x 8 x 30 nm data |
 | `align_z_field` | Explicit cached registration NPZ for tracing; use a new result directory when changing it |
 
 ~~~bash
@@ -32,10 +32,9 @@ Relative paths resolve from the launch working directory. Use absolute paths aft
 copying a configuration to a specific machine to avoid ambiguity. The generated
 `trace_config.json` from `export_savem3.py` contains absolute paths.
 
-`verification_config.example.json` belongs to the historical interactive verifier
+`verification_config.example.json` configures segment-set review
 and uses different fields. Demo display registration is independently enabled by
 default; it does not change tracing's `align_z` setting.
 
-See the [five-ROI quality workflow](../README_trace_quality.md) for matched fields
-and comparison layers. Guarded ASP can extend the five-frame minimum up to 24
+See the [tracing verification](../README_trace_quality.md) for connection checks and resume. Guarded ASP can extend the five-frame minimum up to 24
 consecutive sections. Model/field content hashes protect matching resumes.

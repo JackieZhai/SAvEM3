@@ -141,16 +141,40 @@ class PointModel:
                                              **self.runtime_options)
         return self.sam2_cache
 
-    def propagate(self, video_path, prompts, *, cancel, progress=None):
+    def predict_refined(self, image, points, labels, mask_input=None):
+        """Run SAM2 image correction with controller-owned refinement logits."""
+        if self.backend != 'sam2':
+            raise ValueError('Iterative mask refinement currently requires SAM2')
+        import torch
+        from probe_em.device import inference_autocast
+        from probe_em.point_refinement import predict_refined
+        key = (image.shape, hashlib.sha256(image.tobytes()).hexdigest())
+        with self.lock, torch.inference_mode(), inference_autocast(self.device):
+            if self.predictor is None:
+                self._load()
+            if key != self.image_key:
+                self.predictor.set_image(image)
+                self.image_key = key
+            result = predict_refined(self.predictor, image.shape, points, labels, mask_input)
+            if self.sam2_cache is not None:
+                self.metadata['acceleration'] = self.sam2_cache.acceleration.info()
+            return result
+
+    def propagate(self, video_path, prompts, *, cancel, progress=None, mask_inputs=None):
         """Yield one native-video-grid mask per frame using real SAM2 memory.
 
-        Prompts map frame indices to (XY points, labels). Each run has fresh video
-        memory; model weights are reused. Track forward from the earliest prompt,
+        Prompts map frame indices to (XY points, labels). Optional binary masks
+        condition those frames directly, preserving a corrected image result.
+        Each run has fresh video memory; weights are reused. Track from the earliest input,
         then backward to the range start. Never duplicate the anchor output.
         """
         import torch
         from probe_em.device import inference_autocast
         from probe_em.propagation import check_cancelled
+        mask_inputs = {} if mask_inputs is None else mask_inputs
+        conditioned_frames = sorted(set(prompts) | set(mask_inputs))
+        if not conditioned_frames:
+            raise ValueError('Propagation requires at least one conditioning section')
         state = None
         with self.lock, torch.inference_mode(), inference_autocast(self.device):
             check_cancelled(cancel)
@@ -166,13 +190,23 @@ class PointModel:
                 add_points = getattr(predictor, 'add_new_points_or_box', None)
                 if add_points is None:
                     add_points = predictor.add_new_points
-                for index, (points, labels) in sorted(prompts.items()):
+                for index in conditioned_frames:
                     check_cancelled(cancel)
-                    if not 0 <= index < state['num_frames'] or not np.any(np.asarray(labels) == 1):
+                    if not 0 <= index < state['num_frames']:
+                        raise ValueError('Conditioning section is outside the video range')
+                    if index in mask_inputs:
+                        mask = np.asarray(mask_inputs[index])
+                        if (mask.shape != (state['video_height'],state['video_width'])
+                                or not np.isin(mask,[0,1]).all()):
+                            raise ValueError('Conditioning mask must be binary and match the video frame')
+                        predictor.add_new_mask(state, frame_idx=index, obj_id=1, mask=mask.astype(bool))
+                        continue
+                    points, labels = prompts[index]
+                    if not np.any(np.asarray(labels) == 1):
                         raise ValueError('Each prompted video section needs a positive point inside the range')
                     add_points(state, frame_idx=index, obj_id=1, points=np.asarray(points, np.float32),
                                labels=np.asarray(labels, np.int32))
-                anchor = min(prompts)
+                anchor = conditioned_frames[0]
                 visited = set()
                 for reverse, steps in ((False, state['num_frames']-1-anchor), (True, anchor)):
                     if reverse and not anchor:
@@ -187,7 +221,8 @@ class PointModel:
                             raise ValueError('Unexpected SAM2 video object or mask geometry')
                         if not torch.isfinite(logits).all():
                             raise ValueError('SAM2 returned nonfinite video logits')
-                        mask = (logits[0, 0] > 0).cpu().numpy()
+                        mask = (np.asarray(mask_inputs[index], dtype=bool).copy() if index in mask_inputs
+                                else (logits[0, 0] > 0).cpu().numpy())
                         visited.add(index)
                         if progress is not None:
                             progress(index, len(visited), state['num_frames'])
