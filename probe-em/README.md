@@ -44,13 +44,22 @@ See its [module guide](probe_em/README.md). `finetune_sam2/` contains
 
 ## Citation
 
-[Probe-EM: Targeted Neuron Tracing via Training-Free Semantic Verification](https://arxiv.org/abs/2607.04696)
+**Probe-EM: Targeted Neuron Tracing via Training-Free Semantic Verification**
+
+*Liuyun Jiang, Yanchao Zhang, Jinyue Guo, Chuanyue Chen, Haiyang Yan, Ye Yuan,
+Jing Liu, Hua Han* <br>
+*State Key Laboratory of Brain Cognition and Brain-inspired Intelligence Technology,
+Institute of Automation, Chinese Academy of Sciences*
+
+MICCAI 2026 paper: [published proceedings](https://doi.org/10.1007/978-3-032-38224-5_59).
 
 ```bibtex
-@article{jiang2026probeem,
-  title={Probe-EM: Targeted Neuron Tracing via Training-Free Semantic Verification},
-  author={Jiang, Liuyun and Zhang, Yanchao and Guo, Jinyue and Chen, Chuanyue and Yan, Haiyang and Yuan, Ye and Liu, Jing and Han, Hua},
-  journal={arXiv preprint arXiv:2607.04696},
-  year={2026}
+@inproceedings{Jiang-Probe-EM,
+    author={Jiang, Liuyun and Zhang, Yanchao and Guo, Jinyue and Chen, Chuanyue and Yan, Haiyang and Yuan, Ye and Liu, Jing and Han, Hua},
+    booktitle={Medical Image Computing and Computer Assisted Intervention -- MICCAI 2026},
+    title={Probe-EM: Targeted Neuron Tracing via Training-Free Semantic Verification},
+    year={2027},
+    pages={624--633},
+    doi={10.1007/978-3-032-38224-5_59}
 }
 ```
