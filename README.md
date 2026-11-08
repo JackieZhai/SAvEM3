@@ -7,26 +7,6 @@ pretraining, SAvEM³ distillation, and interactive Neuroglancer review.
 [LC-NE test data](docs/LC_NE_TEST.md) ·
 [Neuroglancer demo](probe-em/README_windows.md)
 
-**SAEM²-SAEvM³: Pretrained and Distilled Models for General-purpose 3D Neuron
-Reconstruction**
-
-*Hao Zhai, Jinyue Guo, Yanchao Zhang, Jing Liu, Hua Han* <br>
-*Key Laboratory of Brain Cognition and Brain-inspired Intelligence Technology,
-Institute of Automation, Chinese Academy of Sciences*
-
-Official code repository for the BIBM 2024 paper:
-
-```
-@inproceedings{Zhai-SAvEM3,
-    author={Zhai, Hao and Guo, Jinyue and Zhang, Yanchao and Liu, Jing and Han, Hua},
-    booktitle={2024 IEEE International Conference on Bioinformatics and Biomedicine (BIBM)},
-    title={SAvEM3: Pretrained and Distilled Models for General-purpose 3D Neuron Reconstruction},
-    year={2024},
-    pages={3972-3977},
-    doi={10.1109/BIBM62325.2024.10822494}
-}
-```
-
 ## Repository layout
 
 | Path | Description |
@@ -178,3 +158,25 @@ python scripts/run_probe_em.py --config configs/config.json
 - [micro-sam](https://github.com/computational-cell-analytics/micro-sam)
 - [SuperHuman](https://github.com/weih527/SuperHuman)
 - [AxonEM-challenge](https://github.com/PytorchConnectomics/AxonEM-challenge)
+
+## Citation
+
+**SAEM²-SAEvM³: Pretrained and Distilled Models for General-purpose 3D Neuron
+Reconstruction**
+
+*Hao Zhai, Jinyue Guo, Yanchao Zhang, Jing Liu, Hua Han* <br>
+*Key Laboratory of Brain Cognition and Brain-inspired Intelligence Technology,
+Institute of Automation, Chinese Academy of Sciences*
+
+Official code repository for the BIBM 2024 paper:
+
+```bibtex
+@inproceedings{Zhai-SAvEM3,
+    author={Zhai, Hao and Guo, Jinyue and Zhang, Yanchao and Liu, Jing and Han, Hua},
+    booktitle={2024 IEEE International Conference on Bioinformatics and Biomedicine (BIBM)},
+    title={SAvEM3: Pretrained and Distilled Models for General-purpose 3D Neuron Reconstruction},
+    year={2024},
+    pages={3972-3977},
+    doi={10.1109/BIBM62325.2024.10822494}
+}
+```

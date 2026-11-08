@@ -41,3 +41,16 @@ and [script reference](scripts/README.md).
 `probe_em/` contains the viewer, model adapters, registration, and tracing code.
 See its [module guide](probe_em/README.md). `finetune_sam2/` contains
 [training tools](finetune_sam2/README.md) for an EM-adapted SAM2 checkpoint.
+
+## Citation
+
+[Probe-EM: Targeted Neuron Tracing via Training-Free Semantic Verification](https://arxiv.org/abs/2607.04696)
+
+```bibtex
+@article{jiang2026probeem,
+  title={Probe-EM: Targeted Neuron Tracing via Training-Free Semantic Verification},
+  author={Jiang, Liuyun and Zhang, Yanchao and Guo, Jinyue and Chen, Chuanyue and Yan, Haiyang and Yuan, Ye and Liu, Jing and Han, Hua},
+  journal={arXiv preprint arXiv:2607.04696},
+  year={2026}
+}
+```
