@@ -159,6 +159,14 @@ python scripts/run_probe_em.py --config configs/config.json
 - [SuperHuman](https://github.com/weih527/SuperHuman)
 - [AxonEM-challenge](https://github.com/PytorchConnectomics/AxonEM-challenge)
 
+## License
+
+This project is licensed under the [Apache License 2.0](LICENSE), matching the
+LC-NE test dataset. See [NOTICE](NOTICE) for copyright and attribution information.
+
+Third-party components retain their own copyright and license notices, including
+the [AxonEM-challenge MIT license](repro/evaluate/AxonEM-challenge/LICENSE).
+
 ## Citation
 
 **SAEM²-SAEvM³: Pretrained and Distilled Models for General-purpose 3D Neuron
