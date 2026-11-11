@@ -4,7 +4,8 @@ Tools for 3D neuron reconstruction from electron microscopy, with SAEM² image
 pretraining, SAvEM³ distillation, and interactive Neuroglancer review.
 
 [Training and inference](docs/WORKFLOW.md) ·
-[LC-NE test data](docs/LC_NE_TEST.md) ·
+[LC-NE test on Hugging Face](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test) ·
+[Dataset setup](docs/LC_NE_TEST.md) ·
 [Neuroglancer demo](probe-em/README_windows.md)
 
 ## Repository layout
@@ -69,10 +70,13 @@ The postprocessing environment installs:
 
 ## Data and pretrained weights
 
-**LC-NE test** is the supplied test dataset: cropped, SOFIMA-aligned, normalized
+**[LC-NE test](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test)**
+is the supplied test dataset: cropped, SOFIMA-aligned, normalized
 zebrafish EM with corresponding labels and context volumes. Its Neuroglancer
-demo contains an overview and five neuronal process windows. See the
-[dataset guide](docs/LC_NE_TEST.md) and the release's `TUTORIAL.md` for setup.
+demo contains an overview and five neuronal process windows. Access requests
+are enabled; request access on the dataset page and authenticate with the approved
+Hugging Face account before downloading. See the [dataset guide](docs/LC_NE_TEST.md)
+and [setup tutorial](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test/blob/main/TUTORIAL.md).
 
 Datasets and model checkpoints are distributed separately from the source code.
 Training data must be prepared separately; LC-NE test is reserved for testing.

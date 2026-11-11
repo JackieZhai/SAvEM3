@@ -45,14 +45,34 @@ no-data margins. The dataset card contains the sampling and provenance details.
 
 ## Download and open
 
+The release is hosted at
+[JackieZhai/Fish-X_LC-NE_Test on Hugging Face](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test).
+Access requests are enabled with manual approval. Sign in to Hugging Face and
+request access on the dataset page. Once approved, authenticate the CLI with
+the same account before downloading:
+
+```bash
+python -m pip install --upgrade huggingface_hub
+hf auth login
+```
+
+For the five process windows, follow the
+[setup tutorial](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test/blob/main/TUTORIAL.md)
+to download and extract the approximately 78 MiB demo archive. The full release,
+including the overview volumes, is approximately 201 GB:
+
+```bash
+hf download JackieZhai/Fish-X_LC-NE_Test \
+  --repo-type dataset --local-dir /data/lc-ne-package
+```
+
 The release contains seven sets of independent ZIP64 parts, `restore.py`,
 checksums, and `demo/lc_ne_process_windows.zip`. Extract all parts of each volume
 into the same destination; do not concatenate ZIP parts. The demo archive contains
 five cached ROIs, their local alignment fields, and relative-path manifests.
 
-The Hugging Face repository ID is pending. Use `TUTORIAL.md` in the prepared
-release for verification, extraction, installation, and demo controls. Dataset
-files are not stored in this Git repository. The dataset license is Apache-2.0.
+The tutorial covers verification, extraction, installation, and demo controls.
+Dataset files are distributed separately from this Git repository under Apache-2.0.
 
 ## Demo views
 

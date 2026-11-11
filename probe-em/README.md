@@ -8,8 +8,11 @@ and saved review masks.
 
 Install the dependencies in [INSTALL.md](INSTALL.md), then follow the
 [window browser guide](README_windows.md). The supplied
-[LC-NE test data](../docs/LC_NE_TEST.md) contains an overview and five process
-windows. The release's `TUTORIAL.md` covers downloading, extraction, and controls.
+[LC-NE test data on Hugging Face](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test)
+contains an overview and five process windows. Request access on the dataset page,
+then follow the [dataset guide](../docs/LC_NE_TEST.md) and
+[setup tutorial](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test/blob/main/TUTORIAL.md)
+for authentication, downloading, extraction, and controls.
 
 | Guide | Contents |
 | --- | --- |
