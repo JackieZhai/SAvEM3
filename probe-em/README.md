@@ -15,9 +15,14 @@ download. For the second, download and extract
 [Fish-X LC-NE Test from Hugging Face](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test)
 first; see the [dataset guide](../docs/LC_NE_TEST.md) for access and setup.
 
+Option 3, `--dataset nuclei --data-root PATH`, uses the overview raw at
+32 x 32 x 30 nm. **P → V → C** places a positive nucleus center, propagates in
+both section directions, and confirms the nucleus. All centers share one layer.
+
 | Guide | Contents |
 | --- | --- |
 | [Interactive review](README_interactive.md) | Positive/negative points, I/V prediction, acceptance |
+| [Nucleus segmentation](README_nuclei.md) | Positive centers, bounded bidirectional propagation, one shared annotation layer |
 | [Test windows](README_windows.md) | Window selector, manifests, overview layers |
 | [Local realignment](README_alignment.md) | Saved fields and method selection |
 | [SOFIMA](README_sofima.md) | Optional local elastic registration |

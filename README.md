@@ -73,15 +73,16 @@ The postprocessing environment installs:
 
 **[Fish-X LC-NE Test](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test)**
 is the supplied test dataset: cropped, SOFIMA-aligned, normalized
-zebrafish EM with corresponding labels and context volumes. Choose one of two
+zebrafish EM with corresponding labels and context volumes. Choose one of three
 [Neuroglancer launch options](probe-em/README_windows.md):
 
 | Option | Data | Opening view |
 | --- | --- | --- |
 | `--dataset examples` (default) | Full lc labels/meshes, five bounding boxes, and five process examples bundled in this repository, about 114 MiB | lc overview with five boxes, followed by five examples |
 | `--dataset full --data-root PATH` | Full dataset downloaded and extracted from Hugging Face, about 201 GB | Overview with five boxes, followed by the same five examples |
+| `--dataset nuclei --data-root PATH` | Extracted overview raw at 32 x 32 x 30 nm | Positive-center SAM2 nucleus segmentation; the five process examples remain available |
 
-Both options load eight saved tracing objects and 55 annotation points into
+The five process examples load eight saved tracing objects and 55 annotation points into
 fresh review directories. Existing reviews are preserved; use
 `--no-starter-session` with a new output directory to start blank.
 The bundled examples need no Hugging Face download or login. For the full
@@ -89,6 +90,10 @@ dataset, request access on the dataset page and authenticate with the approved
 account. See [dataset setup](docs/LC_NE_TEST.md) for download and extraction.
 Model checkpoints and training data are obtained separately. Fish-X LC-NE Test
 is reserved for testing.
+
+For option 3, use **P → V → C** to place a nucleus center, propagate in both Z
+directions, and confirm it. All nucleus centers share one annotation layer.
+See [nucleus segmentation](probe-em/README_nuclei.md).
 
 ### SAM / HQ-SAM weights
 

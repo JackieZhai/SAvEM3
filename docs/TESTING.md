@@ -15,6 +15,8 @@ The Fish-X LC-NE Test checks verify bundled archive extraction, both overview
 modes, saved window annotations, portable mesh serving, and stable review paths.
 Starter-session checks cover native mask integrity, aligned/native point mapping,
 continued tracing, and protection of existing review outputs.
+Nucleus checks cover positive-only centers, bounded bidirectional blocks,
+stopping conditions, one shared annotation layer, restart recovery, and sparse unions.
 Full-volume setup tests use metadata fixtures; they do not download the full release.
 
 ## Optional model tests

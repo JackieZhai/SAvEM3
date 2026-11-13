@@ -49,8 +49,9 @@ no-data margins. The dataset card contains the sampling and provenance details.
 | --- | --- | --- |
 | `examples` (default) | lc overview with five boxes, then five process examples | Bundled in this repository, about 114 MiB |
 | `full` | Full overview with bounding boxes, then the same five examples | Download and extract the full Hugging Face release first, about 201 GB |
+| `nuclei` | 32 x 32 x 30 nm overview for positive-center SAM2 segmentation, plus the five process examples | Restore at least the raw volume's 32 nm scale and its metadata |
 
-Both use the same images, reference labels, and supplied local realignment fields
+All options use the same images, reference labels, and supplied local realignment fields
 for the five boxes. Fresh review directories also load eight saved tracing objects
 and their 55 annotation points from the bundled starter session. Existing reviews
 are preserved. Add `--no-starter-session` with a new output directory to start blank.
@@ -128,14 +129,27 @@ checks the seven volumes and their geometry before starting the viewer. It
 does not initiate a full download. To check setup without loading a model,
 replace `--checkpoint ... --open` with `--prepare-only`.
 
-Saved objects use `OUTPUT/neuron_<ID>/interactive/` in both options, so they stay
+Saved process objects use `OUTPUT/neuron_<ID>/interactive/` in all options, so they stay
 with their neuron when switching modes. The example archives and full dataset
 are licensed under Apache-2.0.
+
+### 3. Nucleus segmentation on the 32 nm overview
+
+```bash
+python probe-em/scripts/demo_windows.py --dataset nuclei --data-root /data/Fish-X-LC-NE-Test --checkpoint /models/sam2_hiera_tiny.pt --output-dir .cache/fish-x-review --open
+```
+
+Place a positive nucleus-center point with **P**, run bidirectional SAM2
+propagation with **V**, and confirm with **C**. All saved centers share one
+`nucleus_centers` layer; masks keep separate colors. This mode uses bounded
+32 x 32 x 30 nm blocks without additional local realignment. Whole-volume raw
+must be restored first; the other full context datasets are optional.
+See [nucleus controls, limits, and saved files](../probe-em/README_nuclei.md).
 
 ## Demo views
 
 **Fish-X LC-NE Test overview** shows the complete lc labels and meshes with five
-ROI boxes in both options. The full option adds whole-volume raw and optional
+ROI boxes in the examples and full options. The full option adds whole-volume raw and optional
 context layers. The overview uses the dataset geometry without additional local
 realignment. Each process window uses its supplied local residual field by
 default. **R** toggles that local realignment.

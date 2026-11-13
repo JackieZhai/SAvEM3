@@ -102,11 +102,28 @@ def _full_overview(data_root):
 
 def prepare_dataset(mode, cache, data_root=None, *, bundle=BUNDLE):
     """Return a local manifest; full-volume downloading is a separate setup step."""
-    if mode not in ('examples', 'full'):
-        raise ValueError('Dataset option must be examples or full')
+    if mode not in ('examples', 'full', 'nuclei'):
+        raise ValueError('Dataset option must be examples, full, or nuclei')
     if mode == 'examples' and data_root is not None:
-        raise ValueError('--data-root is only used with --dataset full')
+        raise ValueError('--data-root is only used with --dataset full or nuclei')
     overview = _full_overview(data_root) if mode == 'full' else None
+    if mode == 'nuclei':
+        if data_root is None:
+            raise ValueError('--dataset nuclei requires --data-root containing zfishlc_raw at 32 x 32 x 30 nm')
+        raw = Path(data_root).expanduser().resolve()/'zfishlc_raw'
+        if not (raw/'info').is_file():
+            raise ValueError('Missing extracted zfishlc_raw/info; download and restore the raw volume first')
+        info = json.loads((raw/'info').read_text())
+        scales = [s for s in info.get('scales', []) if s['resolution'] == [32, 32, 30]]
+        if (info.get('type') != 'image' or len(scales) != 1
+                or scales[0]['voxel_offset'] != [48, 72, 0] or scales[0]['size'] != [2160, 2040, 1583]):
+            raise ValueError('Raw does not match the released 32 x 32 x 30 nm Fish-X LC-NE Test geometry')
+        folder = raw/scales[0]['key']
+        if not folder.is_dir() or not any(p.is_file() for p in folder.iterdir()):
+            raise ValueError('No extracted 32 x 32 x 30 nm raw chunks')
+        overview = dict(kind='overview', name=f'{DATASET_NAME} nuclei (32 x 32 x 30 nm)',
+                        raw_path=str(raw), review_mode='nuclei', raw_resolution=[32, 32, 30],
+                        segments=list(range(30001, 30006)), image_layers={}, label_layers={}, visible_layers=[])
     bundle, cache = Path(bundle).resolve(), Path(cache).expanduser().resolve()
     release = json.loads((bundle/'manifest.json').read_text(encoding='utf-8'))
     if sha256(bundle/'windows.json') != release['windows_sha256']:
@@ -117,7 +134,7 @@ def prepare_dataset(mode, cache, data_root=None, *, bundle=BUNDLE):
         raise ValueError('Bundled test_windows annotation checksum mismatch')
     cache.mkdir(parents=True, exist_ok=True)
     for record in release['archives']:
-        if mode not in record.get('modes', ['examples', 'full']):
+        if ('examples' if mode == 'nuclei' else mode) not in record.get('modes', ['examples', 'full']):
             continue
         filename = record['file']
         if Path(filename).name != filename:
@@ -127,7 +144,10 @@ def prepare_dataset(mode, cache, data_root=None, *, bundle=BUNDLE):
         overview = dict(kind='overview', name=f'{DATASET_NAME} overview',
                         seg_path=str(cache/'zfishlc_lc'), segments=list(range(30001, 30006)),
                         image_layers={}, label_layers={}, visible_layers=[])
-    overview['test_windows_path'] = str(annotation_path)
+    if mode == 'nuclei':
+        overview['seg_path'] = str(cache/'zfishlc_lc')
+    else:
+        overview['test_windows_path'] = str(annotation_path)
     manifest['windows'].insert(0, overview)
     manifest.update(dataset=DATASET_NAME, dataset_option=mode, initial_index=0)
     # Each mode has a separate manifest but shares the same five cached boxes.
@@ -151,5 +171,7 @@ def prepare_dataset(mode, cache, data_root=None, *, bundle=BUNDLE):
 def review_folder(output, item, index, *, supplied_dataset):
     """Keep each neuron's saved objects stable when the overview is added."""
     if supplied_dataset:
+        if item.get('review_mode') == 'nuclei':
+            return Path(output)/'nuclei'
         return Path(output)/('overview' if item['kind'] == 'overview' else f'neuron_{item["seed"]}')
     return Path(output)/f'window_{index:03d}'

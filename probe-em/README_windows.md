@@ -10,7 +10,7 @@ two confirmations. The matching keys work inside the viewer.
 ## Start the Fish-X LC-NE Test demo
 
 Install [Probe-EM and SAM2](INSTALL.md), including matching SAM2 weights. There
-are two dataset options. Run the commands below from the repository root.
+are three dataset options. Run the commands below from the repository root.
 
 ### 1. Bundled lc overview and five examples (default)
 
@@ -56,7 +56,7 @@ python probe-em/scripts/demo_windows.py \
 This starts at **Fish-X LC-NE Test overview**, followed by the same five bundled
 examples. Full volumes must be extracted before launch; the viewer does not
 download them in the background. Keep the Python server running while using
-either option.
+any option.
 
 The full overview shows the whole cropped dataset, neuron meshes, and named boxes
 for the five process windows. Mito, syn, ves, lcpre, and lcsyn are available only
@@ -69,14 +69,31 @@ positive/negative points, **I** predicts a section, and **V** propagates through
 the range set with **B/E**. See [interactive controls](README_interactive.md).
 `ground_truth` uses neutral gray (`#b0b0b0`), distinct from the first five object colors.
 
+### 3. Nucleus segmentation on the overview
+
+Use the extracted raw volume with `--dataset nuclei`:
+
+```bash
+python probe-em/scripts/demo_windows.py \
+  --dataset nuclei --data-root /data/Fish-X-LC-NE-Test \
+  --checkpoint /models/sam2_hiera_tiny.pt \
+  --output-dir .cache/fish-x-review --open
+```
+
+The overview uses **32 x 32 x 30 nm** raw data. **P** places one positive nucleus
+center, **V** propagates above and below it, and **C** confirms the nucleus and
+starts the next in a new color. All centers stay in one `nucleus_centers` layer.
+The five process windows remain available. See the [nucleus guide](README_nuclei.md)
+for propagation limits, the two-confirmation union export, and saved results.
+
 ## Display and session options
 
 Views use `4panel-alt`, visible axes, and `showSlices=false`. Process meshes use
 near-isotropic sampling; the image sections retain their native resolution.
-`--no-align-z` disables local realignment. The overview never applies an additional
+`--no-align-z` disables local realignment in process windows. The overview never applies an additional
 local field to the already aligned dataset.
 
-Without a starter session, the initial propagation range extends four sections
+In process windows without a starter session, the initial propagation range extends four sections
 to either side of the current section. Set `--propagate-radius` and
 `--propagate-max-slices` to change it; the
 window browser's maximum defaults to 64. Model settings are described in the
@@ -86,12 +103,15 @@ Windows load on demand and retain separate points, sections, ranges, and objects
 for the lifetime of the server process. Previous/Next wraps at either end.
 `#window=N` selects a zero-based window in a saved URL. Restarting Python starts
 new interactive sessions and reloads saved objects and their point layers from
-the same output directory. Unfinished active annotations are not automatically restored.
+the same output directory. Unfinished active process-window annotations are not
+automatically restored. Nuclei mode also restores its active center; V recomputes
+an unfinished preview.
 
-Predictions and acceptance records for either dataset option are stored under
+Process predictions and acceptance records in all dataset modes are stored under
 `OUTPUT/neuron_30001/interactive/` through `OUTPUT/neuron_30005/interactive/`.
-Reusing the output directory preserves saved objects when changing between the
-two options. Bundled data are cached under `OUTPUT/dataset/`. To prepare them
+Reusing the output directory preserves saved process objects when changing modes.
+Nucleus reviews use `OUTPUT/nuclei/interactive/`. Bundled data are cached under
+`OUTPUT/dataset/`. To prepare them
 without starting a viewer or loading a model, use `--prepare-only` in place of
 `--checkpoint ... --open`.
 
@@ -105,7 +125,7 @@ Use `--windows PATH` instead of `--dataset` for a custom manifest. Existing
 `demo/windows.json` and `demo/windows.roi-only.json` manifests from the Hugging
 Face package remain supported. Custom manifests save reviews under
 `OUTPUT/window_NNN/interactive/`; keep their output directory separate from
-the two supplied dataset options.
+the supplied dataset options.
 
 `demo_windows.py` accepts a JSON object with `schema_version: 1`, `initial_index`,
 and a nonempty `windows` array. All local paths resolve relative to the manifest.

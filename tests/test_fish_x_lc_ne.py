@@ -225,3 +225,46 @@ def test_bundled_starter_masks_and_annotations_match_all_five_raw_volumes(prepar
         totals[0] += len(restored.objects)
         totals[1] += len(annotations)
     assert totals == [8, 55]
+
+
+def test_nuclei_option_needs_only_32nm_raw_and_keeps_process_reviews_separate(prepared, full_metadata):
+    root, _ = prepared
+    path = prepare_dataset('nuclei', root/'dataset', full_metadata)
+    windows, initial = read_windows(path)
+    item = windows[0]
+    assert initial == 0 and len(windows) == 6
+    assert item['review_mode'] == 'nuclei' and item['raw_resolution'] == [32, 32, 30]
+    assert item['seg_path'] == str(path.parent/'zfishlc_lc')
+    assert 'test_windows_path' not in item  # Box coordinates are recomputed on the 32 nm grid.
+    assert item['image_layers'] == {} and item['label_layers'] == {}
+    assert review_folder(root, item, 0, supplied_dataset=True) == root/'nuclei'
+    assert review_folder(root, windows[1], 1, supplied_dataset=True) == root/'neuron_30001'
+    # Other full-volume metadata is not needed for nuclei mode.
+    (full_metadata/'zfishlc_mito/info').unlink()
+    prepare_dataset('nuclei', root/'dataset', full_metadata)
+    with pytest.raises(ValueError, match='requires --data-root'):
+        prepare_dataset('nuclei', root/'dataset')
+
+
+def test_32nm_overview_serves_filtered_metadata_without_modifying_the_source(full_metadata, tmp_path):
+    import numpy as np
+    from probe_em.precomputed_files import PrecomputedFiles
+    from probe_em.overview import build_overview
+    source = full_metadata/'zfishlc_raw'
+    original = (source/'info').read_bytes()
+    files = PrecomputedFiles(tmp_path/'cache')
+    info = files.register('raw32', source, resolution=[32, 32, 30])
+    served, _ = files.resolve('raw32/info')
+    assert json.loads(served.read_text()) == info
+    assert info['scales'][0]['resolution'] == [32, 32, 30] and len(info['scales']) == 4
+    assert (source/'info').read_bytes() == original
+    seg_info = json.loads((full_metadata/'zfishlc_lc/info').read_text())
+    viewer, report = build_overview(dict(name='Nuclei overview', raw_path=str(source),
+        seg_path=str(full_metadata/'zfishlc_lc')), [], info, seg_info,
+        'precomputed://http://localhost/raw32', 'precomputed://http://localhost/lc')
+    assert report['resolution_xyz_nm'] == [32, 32, 30]
+    assert np.allclose(viewer.state.dimensions.scales, [32e-9, 32e-9, 30e-9], rtol=1e-6, atol=0)
+    for scale in info['scales'][1:]:
+        (source/scale['key']/'fixture').unlink()
+    only32 = files.register('raw32_only', source, resolution=[32, 32, 30])
+    assert [scale['resolution'] for scale in only32['scales']] == [[32, 32, 30]]

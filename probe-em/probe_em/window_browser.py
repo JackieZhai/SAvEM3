@@ -116,6 +116,8 @@ class WindowCollection:
             with session.lock:
                 review.update(busy=session.future is not None and not session.future.done(),
                               confirmation_stage=session.merge_pending['stage'] if session.merge_pending else None)
+                if getattr(session, 'object_label', None) is not None:
+                    review['object_label'] = session.object_label
         return {'index': index, 'messages': feed.snapshot() if feed is not None else [], 'review': review}
 
     def review_action(self, index, operation):

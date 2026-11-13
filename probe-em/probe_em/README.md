@@ -5,6 +5,9 @@
 | `interactive.py` | Per-object points, asynchronous image/video inference, previews, and acceptance |
 | `review_objects.py` | Saved object colors and point layers, native-mask unions, and review manifests |
 | `starter_session.py` | Validated installation of bundled reviews into fresh output directories and native/aligned view restoration |
+| `nuclei.py` | Bounded 32 nm raw reads and center-outward SAM2 nucleus propagation |
+| `nucleus_session.py` | Positive-only nucleus controls and one persistent center layer |
+| `nucleus_review.py` | Cropped nucleus masks, restart recovery, and sparse binary union export |
 | `point_refinement.py` | SAM2 candidate selection and mask refinement using positive/negative points |
 | `prompt_models.py` | SAM/HQ-SAM/SAEM²/SAM2 adapters and corrected-mask video initialization |
 | `propagation.py` | Video input grids, frame encoding, and native-coordinate output mapping |

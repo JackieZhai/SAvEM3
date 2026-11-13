@@ -13,8 +13,8 @@ from probe_em.fish_x_lc_ne import DATASET_NAME, prepare_dataset, review_folder
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group()
-    source.add_argument('--dataset', choices=['examples', 'full'],
-                        help='Fish-X LC-NE Test: bundled lc overview and five boxes (default), or full dataset')
+    source.add_argument('--dataset', choices=['examples', 'full', 'nuclei'],
+                        help='Fish-X LC-NE Test: bundled examples (default), full overview, or 32 nm nucleus review')
     source.add_argument('--windows', type=Path, help='Custom local window manifest JSON')
     parser.add_argument('--data-root', type=Path, help='Extracted full dataset directory containing zfishlc_*')
     parser.add_argument('--prepare-only', action='store_true', help='Prepare and validate data without starting the viewer')
@@ -30,6 +30,11 @@ def main(argv=None):
     parser.add_argument('--feature-cache-mb', type=float, default=512)
     parser.add_argument('--propagate-max-slices', type=int, default=64)
     parser.add_argument('--propagate-radius', type=int, default=4)
+    parser.add_argument('--nuclei-box-size', type=int, default=384, help='Nucleus XY crop width in 32 nm voxels')
+    parser.add_argument('--nuclei-max-radius', type=int, default=256, help='Maximum sections in each direction from a nucleus center')
+    parser.add_argument('--nuclei-block-slices', type=int, default=16, help='New sections per nucleus SAM2 video block')
+    parser.add_argument('--nuclei-empty-sections', type=int, default=2, help='Consecutive empty sections that stop nucleus propagation')
+    parser.add_argument('--nuclei-auto-run', action='store_true', help='Start propagation immediately after placing a nucleus center with P')
     parser.add_argument('--no-align-z', action='store_true')
     parser.add_argument('--max-voxels', type=int, default=128_000_000)
     parser.add_argument('--output-dir', type=Path, required=True)
@@ -41,7 +46,7 @@ def main(argv=None):
     if not args.prepare_only and not args.checkpoint:
         parser.error('--checkpoint is required unless --prepare-only is used')
     if args.windows and args.data_root:
-        parser.error('--data-root belongs to --dataset full, not --windows')
+        parser.error('--data-root belongs to --dataset full or nuclei, not --windows')
     output = args.output_dir.expanduser().resolve()
     supplied_dataset = args.windows is None
     try:
@@ -72,7 +77,8 @@ def main(argv=None):
     for index, item in enumerate(windows):
         if item['kind'] == 'overview':
             overview_info[index] = {
-                kind: volumes.register(f'overview_{index}_{kind}', item[kind+'_path'])
+                kind: volumes.register(f'overview_{index}_{kind}', item[kind+'_path'],
+                                       resolution=item.get('raw_resolution') if kind == 'raw' else None)
                 for kind in ('raw', 'seg') if item.get(kind+'_path')}
             overview_info[index]['images'] = {
                 name: (volumes.register(f'overview_{index}_image_{number}', path),
@@ -101,6 +107,18 @@ def main(argv=None):
                                            label_sources={
                                                name: (info, f'precomputed://{url}data/{mount}')
                                                for name, (info, mount) in overview_info[index]['labels'].items()})
+            if item.get('review_mode') == 'nuclei':
+                from probe_em.nuclei import NucleusOptions, NucleusRaw
+                from probe_em.nucleus_session import NucleusSession
+                raw = NucleusRaw(sources['raw'], overview_info[index]['raw'])
+                NucleusSession(viewer, raw, model, folder/'interactive', item['raw_path'],
+                    options=NucleusOptions(box_size=args.nuclei_box_size, max_radius=args.nuclei_max_radius,
+                        block_slices=args.nuclei_block_slices, empty_sections=args.nuclei_empty_sections),
+                    auto_run=args.nuclei_auto_run)
+                with viewer.txn() as state:
+                    state.layers['lc'].visible = False
+                    state.layers['test_windows'].visible = False
+                report['interactive'] = dict(enabled=True, mode='nuclei', resolution_xyz_nm=[32, 32, 30])
             publish(viewer, report, folder, item, index)
             return viewer
         viewer, report = build_viewer(item['local_dir'], item.get('traced_ids', []), item['seed'],

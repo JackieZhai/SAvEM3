@@ -58,6 +58,8 @@
     document.querySelector('#status-line-2').textContent=lines.slice(1).join(' · ');
     const full=lines.join('\n\n'); statusText.textContent=full; status.title=full+'\nClick to expand the full status.';
     newObject.disabled=acceptObjects.disabled=!review.enabled||Boolean(review.busy);
+    newObject.textContent=review.object_label==='nucleus'?'Confirm nucleus (C)':'New object (C)';
+    newObject.title=review.object_label==='nucleus'?'Save this nucleus and keep its center, then start another (C)':'Save this object and its points, then start another (C)';
     confirmReview.hidden=cancelReview.hidden=!review.confirmation_stage;
     confirmReview.textContent='Confirm '+(review.confirmation_stage||1)+'/2';
   }

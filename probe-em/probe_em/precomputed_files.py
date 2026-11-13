@@ -20,7 +20,7 @@ class PrecomputedFiles:
         self.locks = [threading.Lock() for _ in range(64)]
         self.read_slots = threading.BoundedSemaphore(4)
 
-    def register(self, name, source):
+    def register(self, name, source, *, resolution=None):
         if not re.fullmatch(r'[a-zA-Z0-9_-]+', name) or name in self.mounts:
             raise ValueError('Volume mount names must be unique simple identifiers')
         source = Path(source).resolve()
@@ -28,6 +28,16 @@ class PrecomputedFiles:
         info = json.loads(metadata)
         if info.get('type') not in ('image', 'segmentation') or not info.get('scales'):
             raise ValueError('Expected a precomputed image or segmentation volume')
+        if resolution is not None:
+            indices = [i for i, scale in enumerate(info['scales']) if scale['resolution'] == list(resolution)]
+            if len(indices) != 1:
+                raise ValueError('Requested base resolution is missing or ambiguous')
+            selected = info['scales'][indices[0]:]
+            # A nuclei-only installation may contain the 32 nm scale alone.
+            # Do not advertise absent optional coarse scales to the browser.
+            info['scales'] = selected[:1]+[scale for scale in selected[1:]
+                if (source/scale['key']).is_dir() and any(p.is_file() for p in (source/scale['key']).iterdir())]
+            metadata = json.dumps(info).encode()
         encoding = info.get('probe_em_filename_encoding')
         if encoding not in (None, 'percent'):
             raise ValueError('Unknown precomputed filename encoding')

@@ -53,7 +53,7 @@ To support native Windows filesystems, lc mesh filenames use percent encoding
 on disk; `info` records `probe_em_filename_encoding: "percent"`. The local server
 maps standard Neuroglancer mesh URLs to these files, including its chunk cache.
 The whole-volume raw and context images are downloaded separately; see the
-[two dataset options](../../../docs/LC_NE_TEST.md).
+[dataset options](../../../docs/LC_NE_TEST.md).
 
 The examples are distributed under [Apache-2.0](../../../LICENSE). Reference
 labels cover selected neurons and are not exhaustive annotations of the tissue.

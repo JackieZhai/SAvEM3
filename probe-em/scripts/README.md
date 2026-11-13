@@ -39,6 +39,8 @@ to add whole-volume raw and context images to the overview. `--prepare-only` pre
 checks data without a model or server. `--windows PATH` accepts a custom manifest.
 Fresh review directories load the bundled saved objects and points. Use
 `--no-starter-session` with a new output directory to start blank.
+`--dataset nuclei --data-root PATH` opens positive-center SAM2 segmentation on
+the 32 x 32 x 30 nm overview; see the [nucleus guide](../README_nuclei.md).
 See the
 [window guide](../README_windows.md) and [interactive controls](../README_interactive.md).
 
