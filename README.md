@@ -78,9 +78,9 @@ zebrafish EM with corresponding labels and context volumes. Choose one of three
 
 | Option | Data | Opening view |
 | --- | --- | --- |
-| `--dataset examples` (default) | Full lc labels/meshes, five bounding boxes, and five process examples bundled in this repository, about 114 MiB | lc overview with five boxes, followed by five examples |
-| `--dataset full --data-root PATH` | Full dataset downloaded and extracted from Hugging Face, about 201 GB | Overview with five boxes, followed by the same five examples |
-| `--dataset nuclei --data-root PATH` | Extracted overview raw at 32 x 32 x 30 nm | Positive-center SAM2 nucleus segmentation; the five process examples remain available |
+| **1. `examples`** (default) | Full lc labels/meshes, five bounding boxes, and five process examples bundled in this repository, about 114 MiB | lc overview with five boxes, followed by five examples |
+| **2. `full`** | Full dataset downloaded and extracted from Hugging Face, about 201 GB | Raw and label overview with optional context layers, followed by the same five examples |
+| **3. `nuclei`** | Extracted overview raw at 32 x 32 x 30 nm | Positive-center SAM2 nucleus segmentation; the five process examples remain available |
 
 The five process examples load eight saved tracing objects and 55 annotation points into
 fresh review directories. Existing reviews are preserved; use
@@ -91,9 +91,63 @@ account. See [dataset setup](docs/LC_NE_TEST.md) for download and extraction.
 Model checkpoints and training data are obtained separately. Fish-X LC-NE Test
 is reserved for testing.
 
-For option 3, use **P → V → C** to place a nucleus center, propagate in both Z
-directions, and confirm it. All nucleus centers share one annotation layer.
-See [nucleus segmentation](probe-em/README_nuclei.md).
+### Neuroglancer quickstart
+
+Install [Probe-EM and SAM2](probe-em/INSTALL.md) and obtain a matching SAM2
+checkpoint. Run these commands from the repository root, replacing the paths
+with your local paths. Keep the Python server running while using the viewer.
+
+**Option 1: bundled overview and five process windows.** No dataset download is
+needed. The overview shows `lc` and `test_windows`; raw images are included in
+each process window.
+
+```bash
+python probe-em/scripts/demo_windows.py \
+  --dataset examples --checkpoint /models/sam2_hiera_tiny.pt \
+  --output-dir .cache/fish-x-review --open
+```
+
+**Option 2: full overview and the same five windows.** First
+[download and extract the seven volumes](docs/LC_NE_TEST.md#2-full-dataset-from-hugging-face).
+Whole-volume raw and optional mito, syn, ves, lcpre, and lcsyn layers are available
+in the overview.
+
+```bash
+python probe-em/scripts/demo_windows.py \
+  --dataset full --data-root /data/Fish-X-LC-NE-Test \
+  --checkpoint /models/sam2_hiera_tiny.pt \
+  --output-dir .cache/fish-x-review --open
+```
+
+**Option 3: nucleus segmentation on the 32 nm overview.** This requires
+`zfishlc_raw/info` and all `32_32_30` raw chunks under `--data-root`; coarser scales
+are used when available. Other full-volume datasets are optional.
+
+```bash
+python probe-em/scripts/demo_windows.py \
+  --dataset nuclei --data-root /data/Fish-X-LC-NE-Test \
+  --checkpoint /models/sam2_hiera_tiny.pt \
+  --output-dir .cache/fish-x-review --open
+```
+
+Use **P → V → C** to place one positive nucleus center, propagate above and
+below its section, and confirm the nucleus. Each accepted nucleus keeps its own
+colored mask; the next nucleus receives a new color. All centers remain in a
+single `nucleus_centers` annotation layer. Propagation uses bounded blocks at
+**32 x 32 x 30 nm** without additional local realignment. See the
+[nucleus guide](probe-em/README_nuclei.md) for stopping conditions and limits.
+
+In process windows, **P/N** adds positive/negative points, **I** predicts a
+section, and **V** propagates through the range set with **B/E**. **C** saves
+the object and its nonempty point layers, then starts another object in a new
+color. In both workflows, **Y** saves the combined mask after two separate
+**Enter** confirmations; individual masks and points remain available.
+**D/F** moves through sections, including while dragging. Use the top-bar
+selector to switch views and **R** to toggle local realignment in process windows.
+See [interactive controls](probe-em/README_interactive.md).
+
+Reusing `--output-dir` restores accepted objects. Process reviews are stored in
+`neuron_<ID>/interactive/`; nucleus reviews use `nuclei/interactive/`.
 
 ### SAM / HQ-SAM weights
 

@@ -6,18 +6,28 @@ and saved review masks.
 
 ## Fish-X LC-NE Test demo
 
-Install the dependencies in [INSTALL.md](INSTALL.md), then follow the
-[window browser guide](README_windows.md). Choose `--dataset examples` for the
-lc labels/meshes, five window boxes, and five examples bundled in the repository,
-or `--dataset full --data-root PATH` to add full-volume raw and context images.
-Both start at the overview. The first option needs no dataset
-download. For the second, download and extract
-[Fish-X LC-NE Test from Hugging Face](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test)
-first; see the [dataset guide](../docs/LC_NE_TEST.md) for access and setup.
+Install the dependencies in [INSTALL.md](INSTALL.md), then choose one of three
+launch options in the [window browser guide](README_windows.md):
 
-Option 3, `--dataset nuclei --data-root PATH`, uses the overview raw at
-32 x 32 x 30 nm. **P → V → C** places a positive nucleus center, propagates in
-both section directions, and confirms the nucleus. All centers share one layer.
+| Option | Views and data |
+| --- | --- |
+| **1. `--dataset examples`** (default) | Bundled lc overview, five window boxes, and five process examples; about 114 MiB, with no dataset download or login |
+| **2. `--dataset full --data-root PATH`** | Full raw/label/context overview and the same five examples; download and extract the Hugging Face volumes first |
+| **3. `--dataset nuclei --data-root PATH`** | SAM2 nucleus segmentation on the 32 x 32 x 30 nm raw overview, plus the same five examples; requires the extracted raw volume's 32 nm scale and metadata |
+
+The official dataset is
+[Fish-X LC-NE Test on Hugging Face](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test).
+See the [dataset guide](../docs/LC_NE_TEST.md) for access and extraction.
+Fresh process reviews load eight saved objects and 55 annotation points from
+the bundled starter session. Existing reviews are preserved; use
+`--no-starter-session` with a new output directory to start blank.
+
+For nuclei, **P → V → C** places one positive center, propagates in both section
+directions, and confirms the nucleus. All centers share one `nucleus_centers`
+layer, while each accepted nucleus has its own colored mask. Negative points
+are not used in this mode. In either workflow, **C** saves the current object
+and starts the next in a new color; **Y** saves a combined mask after two
+confirmations, retaining the individual masks and annotations.
 
 | Guide | Contents |
 | --- | --- |

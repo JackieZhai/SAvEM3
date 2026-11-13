@@ -41,7 +41,7 @@ At mip 0, the voxel offset is `[192, 288, 0]` and size is
 
 The whole-volume SOFIMA field is anchored at section 791 and applied to all
 corresponding volumes. CLAHE is applied to raw only. The shared crop excludes
-no-data margins. The dataset card contains the sampling and provenance details.
+no-data margins. Each volume's `info` records its sampling grid.
 
 ## Choose a dataset option
 
