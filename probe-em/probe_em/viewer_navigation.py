@@ -24,6 +24,8 @@ class _NavigationContentSource:
                 bounds = getattr(viewer, 'probe_em_section_bounds', None)
             config = ({'enabled': True, 'min_z': bounds[0], 'max_z': bounds[1]}
                       if bounds is not None else {'enabled': False})
+            if getattr(viewer, 'probe_em_interactive', None) is not None:
+                config['review_controls'] = True
             return json.dumps(config).encode(), 'application/json'
         data, content_type = self.base.get(name, query)
         if name in ('', 'index.html') and 'text/html' in content_type:

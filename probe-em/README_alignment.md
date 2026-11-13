@@ -1,6 +1,6 @@
 # Local realignment
 
-The LC-NE process windows use supplied local residual fields. All five use the
+The Fish-X LC-NE Test process windows use supplied local residual fields. All five use the
 same wide-context ECC translation method and parameters. A separate field is
 fitted to each window, with its middle section fixed and its linear XY drift
 removed to preserve the whole-volume SOFIMA coordinate trend.
@@ -33,7 +33,7 @@ additional local realignment.
 
 An explicit field bypasses estimation. SOFIMA requires the
 [optional worker](README_sofima.md) to estimate fields, but not to load them.
-The LC-NE residual fields are dataset-specific; generic ECC estimation does not
+The Fish-X LC-NE Test residual fields are dataset-specific; generic ECC estimation does not
 automatically remove a linear trend from new data.
 
 ## Coordinates and caches
@@ -53,8 +53,9 @@ Correlation alone does not measure neuron segmentation accuracy. For a compariso
 on a local cache:
 
 ```bash
+python probe-em/scripts/demo_windows.py --dataset examples --prepare-only --output-dir .cache/fish-x-review
 python probe-em/scripts/compare_alignment.py \
-  --local-dir /data/LC-NE-test/demo/process_windows/neuron_30003/cache \
+  --local-dir .cache/fish-x-review/dataset/process_windows/neuron_30003/cache \
   --sofima-python /envs/sofima/bin/python \
   --output-dir /data/alignment-comparison
 ```

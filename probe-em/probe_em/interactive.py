@@ -10,6 +10,7 @@ import hashlib
 import json
 from pathlib import Path
 import threading
+import time
 import uuid
 
 import neuroglancer
@@ -21,12 +22,14 @@ from probe_em.meshes import MeshVolume
 from probe_em.prompt_models import PointModel
 from probe_em.viewer_status import set_status
 from probe_em.propagation import PropagationCancelled, PropagationGrid, check_cancelled
+from probe_em.review_objects import ReviewObjects, layer_name
 
 
 POINT_LAYERS = {1: 'positive_points', 0: 'negative_points'}
-LAYER_NAMES = (*POINT_LAYERS.values(), 'sam_preview', 'sam_accepted')
+LAYER_NAMES = (*POINT_LAYERS.values(), 'sam_preview', 'sam_accepted', 'sam_final')
 HELP = ('P/N: points; I: current slice; D/F: previous/next slice; B/E: range start/end; '
-        'V: SAM2 propagate; X: stop; U: undo; C: new object; Y: accept/save. ')
+        'V: SAM2 propagate; X: stop; U: undo; C: save object and start next; '
+        'Y: accept/save all objects (two confirmations). ')
 
 
 class InteractiveSession:
@@ -42,10 +45,14 @@ class InteractiveSession:
         self.output = Path(output_dir)
         self.source = str(Path(source).resolve()) if source else None
         self.mesh_options = dict(mesh_isotropic=mesh_isotropic, mesh_target_nm=mesh_target_nm)
+        self.review_objects = ReviewObjects(self.output, raw.shape, self.offset, self.resolution, self.source)
         self.lock = threading.RLock()
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='probe-em-prompt')
         self.future = None
-        self.preview = self.accepted = None
+        self.preview = None
+        self.accepted = next(reversed(self.review_objects.objects.values()), None)
+        self.merge_pending = None
+        self.confirmation_bindings = {}
         self.image_history = {}
         self.edit_history = []
         self.generation = 0
@@ -60,15 +67,23 @@ class InteractiveSession:
         with viewer.txn() as state:
             for label, name in POINT_LAYERS.items():
                 state.layers[name] = neuroglancer.LocalAnnotationLayer(
-                    dimensions=state.dimensions, annotation_color='#00ff80' if label else '#ff4060')
+                    dimensions=state.dimensions, annotation_color=self.review_objects.color if label else '#ff4060')
             # Interactive review starts with raw visible through the new mask overlay.
             state.layers['probe_trace'].visible = False
             state.selected_layer.layer = POINT_LAYERS[1]
             self._center_section(state, int(np.floor(state.position[2])))
+            for object_id, result in self.review_objects.objects.items():
+                self._render_mask(state, layer_name(object_id), result, self.mode['aligned'])
+                self._render_object_points(state, result, self.mode['aligned'])
+            if self.review_objects.final is not None:
+                self._render_mask(state, 'sam_final', self.review_objects.final, self.mode['aligned'])
+                state.layers['sam_final'].visible = self.review_objects.final['parents'] == list(self.review_objects.objects)
         callbacks = {'prompt-positive': lambda action: self.add_point(action, 1),
                      'prompt-negative': lambda action: self.add_point(action, 0),
-                     'prompt-run': self.run, 'prompt-clear': self.clear,
-                     'prompt-undo': self.undo, 'prompt-accept': self.accept,
+                     'prompt-run': self.run, 'prompt-clear': self.new_object,
+                     'prompt-undo': self.undo, 'prompt-accept': self.request_merge,
+                     'prompt-merge-confirm': self.confirm_merge,
+                     'prompt-merge-cancel': self.cancel_merge,
                      'prompt-propagate': self.propagate, 'prompt-stop': self.stop,
                      'prompt-range-start': lambda action: self.set_range(action, 0),
                      'prompt-range-end': lambda action: self.set_range(action, 1),
@@ -76,7 +91,7 @@ class InteractiveSession:
                      'prompt-next-section': lambda action: self.navigate(action, 1)}
         for name, callback in callbacks.items():
             needs_frame = name in ('prompt-positive', 'prompt-negative', 'prompt-run',
-                                   'prompt-propagate', 'prompt-accept')
+                                   'prompt-propagate', 'prompt-accept', 'prompt-clear', 'prompt-merge-confirm')
             viewer.actions.add(name, self._guard(callback, needs_frame))
         with viewer.config_state.txn() as state:
             for key, action in (('p', 'positive'), ('n', 'negative')):
@@ -89,25 +104,30 @@ class InteractiveSession:
                 state.input_event_bindings.slice_view[f'key{key}'] = f'prompt-{action}'
         from probe_em.viewer_navigation import install_section_navigation
         install_section_navigation(viewer, int(self.offset[2]), int(self.offset[2])+raw.shape[2]-1)
-        self.status('Add points on an XY section. I predicts that slice; V propagates with SAM2. ' + HELP)
+        self.status('Add points on an XY section to begin.')
 
     def _guard(self, callback, needs_frame=True):
         def invoke(action):
             try:
                 with self.lock:
                     if not self.closed:
+                        if self.merge_pending and callback not in (self.request_merge, self.confirm_merge, self.cancel_merge):
+                            self._cancel_merge()
                         client = action.viewer_state
                         if (needs_frame and 'raw' in client.layers and client.layers['raw'].source[0].url
                                 != self.viewer.state.layers['raw'].source[0].url):
                             raise ValueError('Display coordinates changed; wait for the viewer to refresh and retry')
                         return callback(action)
             except Exception as error:
-                self.status(f'{type(error).__name__}: {error}. ' + HELP)
+                self._cancel_merge()
+                self.status(f'{type(error).__name__}: {error}.')
         return invoke
 
-    def status(self, message):
+    def status(self, message, *, controls=True):
+        context = (f'Object {self.review_objects.next_id}; {len(self.review_objects.objects)} saved. '
+                   f'Propagation range: z={self.propagation_range[0]}..{self.propagation_range[1]} (inclusive). ')
         set_status(self.viewer, 'probe-em-interactive',
-                   f'Propagation range: z={self.propagation_range[0]}..{self.propagation_range[1]} (inclusive). ' + message)
+                   context + message + (' ' + HELP if controls else ''))
 
     def _current_z(self, action=None):
         state = self.viewer.state
@@ -126,16 +146,16 @@ class InteractiveSession:
             position = np.asarray(state.position).copy()
             position[2] = z+.5
             state.position = position
-        self.status(f'Current z={z}. Points on other slices are retained; add points here or use V. ' + HELP)
+        self.status(f'Current z={z}. Points on other slices are retained; add points here or propagate.')
 
     def set_range(self, action, endpoint):
         self.propagation_range[endpoint] = self._current_z(action)
         self._invalidate()
-        self.status('Range updated. B sets the lower z and E the upper z; then V. ' + HELP)
+        self.status('Propagation range updated.')
 
     def stop(self, _=None):
         self._invalidate()
-        self.status('Stop requested; the current model step may finish before stopping. Saved results retained. ' + HELP)
+        self.status('Stop requested; the current model step may finish before stopping. Saved results retained.')
 
     def _native(self, points, aligned=None):
         points = np.asarray(points, dtype=float).reshape(-1, 3).copy()
@@ -173,7 +193,8 @@ class InteractiveSession:
         if positive.intersection(tuple(pixel) for pixel in pixels[labels == 0]):
             raise ValueError('A pixel cannot have both positive and negative prompts')
         return {'ids': [item[0] for item in records], 'points': points, 'labels': labels,
-                'z': z, 'scope': 'volume' if all_sections else 'image', 'generation': self.generation}
+                'z': z, 'scope': 'volume' if all_sections else 'image', 'generation': self.generation,
+                'object_id': self.review_objects.next_id, 'color': self.review_objects.color}
 
     @staticmethod
     def _same_prompts(current, snapshot):
@@ -197,6 +218,7 @@ class InteractiveSession:
                 raise ValueError('Annotation edits are still synchronizing; wait and retry')
 
     def _invalidate(self):
+        self._cancel_merge()
         self.cancel_event.set()
         self.generation += 1
         self.preview = None
@@ -215,22 +237,20 @@ class InteractiveSession:
         native = self._native([point])[0]
         annotation_id = uuid.uuid4().hex
         with self.viewer.txn() as state:
+            if 'sam_final' in state.layers:
+                state.layers['sam_final'].visible = False
             state.layers[POINT_LAYERS[label]].annotations.append(
                 neuroglancer.PointAnnotation(id=annotation_id, point=point,
                                             description='positive' if label else 'negative'))
             self._center_section(state, int(native[2]))
         self.edit_history.append((POINT_LAYERS[label], annotation_id))
         self._invalidate()
-        self.status(f'Added {"positive" if label else "negative"} point at z={int(native[2])}; other slices retained. ' + HELP)
+        self.status(f'Added {"positive" if label else "negative"} point at z={int(native[2])}; other slices retained.')
 
-    def clear(self, _=None):
-        with self.viewer.txn() as state:
-            for name in POINT_LAYERS.values():
-                state.layers[name].annotations = []
-        self.edit_history.clear()
-        self.image_history.clear()
-        self._invalidate()
-        self.status('Cleared prompts and preview; saved results retained. ' + HELP)
+    def new_object(self, action=None):
+        self._save_current_object(action)
+        self.status(f'Saved object {self.accepted["object_id"]} and its point layers. '
+                    'Add points for the next object in its new color.')
 
     def undo(self, _=None):
         if self.edit_history:
@@ -238,7 +258,7 @@ class InteractiveSession:
             with self.viewer.txn() as state:
                 state.layers[name].annotations = [a for a in state.layers[name].annotations if a.id != annotation_id]
             self._invalidate()
-        self.status('Undid last P/N point. Use the annotation tab for manual edits. ' + HELP)
+        self.status('Undid last P/N point. Use the annotation tab for manual edits.')
 
     def run(self, action=None):
         if self.future is not None and not self.future.done():
@@ -281,6 +301,7 @@ class InteractiveSession:
         folder = self.output / ('prediction_' + uuid.uuid4().hex)
         folder.mkdir(parents=True, exist_ok=False)
         metadata = dict(self.model.metadata, schema_version=1, scope='single_section_review',
+                        object_id=snapshot['object_id'], object_color=snapshot['color'],
                         created_at=datetime.now(timezone.utc).isoformat(), source=self.source,
                         resolution_xyz_nm=self.resolution.tolist(), absolute_z=z,
                         voxel_offset_xyz=[*map(int, self.offset[:2]), z], mask_axes='YX',
@@ -328,7 +349,7 @@ class InteractiveSession:
                 if prediction['refinement'] is not None:
                     agreement = self._point_check_message(prediction['refinement']['diagnostics'])
                 self.status(f'Preview z={z}, {int(mask.sum())} pixels. ' + agreement +
-                            'Y: accept/save; edit points then I: rerun. ' + HELP)
+                            'Edit points and rerun to refine.')
         except Exception as error:
             with self.lock:
                 if not self.closed:
@@ -408,7 +429,8 @@ class InteractiveSession:
                         inference_origin_xy=grid.origin.tolist(), inference_shape_xy=list(grid.shape),
                         frame_encoding='JPEG quality=100, subsampling=0; encoded frames retained',
                         points_xyz_original=snapshot['points'].tolist(), point_labels=snapshot['labels'].tolist(),
-                        object_id=1, identity_scope='one user-selected object per C/new-object session',
+                        object_id=snapshot['object_id'], object_color=snapshot['color'], sam2_tracking_id=1,
+                        identity_scope='one object until acceptance or clearing',
                         display_alignment=self.field.stats() if self.field else None)
 
         def write_metadata():
@@ -487,8 +509,7 @@ class InteractiveSession:
                     self._render_mask(state, 'sam_preview', self.preview, self.mode['aligned'])
                 empty = len(metadata['empty_sections'])
                 self.status(f'Propagation preview: {count} slices, {empty} empty. ' + self._point_check_message(counts) +
-                            'Scroll or D/F to inspect; '
-                            'Y accepts the full range. Add correction points and V to rerun. ' + HELP)
+                            'Inspect the full range; add correction points and rerun to refine.')
         except Exception as error:
             if folder.is_dir():
                 metadata.update(status='cancelled' if isinstance(error, PropagationCancelled) else 'failed',
@@ -498,7 +519,7 @@ class InteractiveSession:
                 if not self.closed:
                     self.preview = None
                     self.status(f'Propagation {"stopped" if isinstance(error, PropagationCancelled) else "failed"}: '
-                                f'{error}. V retries with the current points/range. ' + HELP)
+                                f'{error}. Retry with the current points/range.')
 
     @staticmethod
     def _center_section(state, z):
@@ -525,41 +546,165 @@ class InteractiveSession:
             offset[:2] = self.aligned_offset[:2]
         source = MeshVolume(np.stack(output, axis=2), dimensions=state.dimensions,
                             voxel_offset=offset, **self.mesh_options)
+        visible = state.layers[name].visible if name in state.layers else True
+        color = result.get('color', result['snapshot'].get('color', self.review_objects.color))
         state.layers[name] = neuroglancer.SegmentationLayer(
-            source=source, segments=[1], segment_colors={'1': '#00ff80' if name == 'sam_accepted' else '#ffc040'},
+            source=source, segments=[1], segment_colors={'1': color},
             selected_alpha=.45, hover_highlight=False, pick=False)
+        state.layers[name].visible = visible
 
     def transform_layers(self, state, aligned):
         """Called in the viewer's alignment transaction, with self.lock held."""
-        for name in POINT_LAYERS.values():
+        names = list(POINT_LAYERS.values())
+        for object_id in self.review_objects.objects:
+            names.extend(f'{layer_name(object_id)}_{name}' for name in POINT_LAYERS.values())
+        for name in names:
+            if name not in state.layers:
+                continue
             for annotation in state.layers[name].annotations:
                 point = np.asarray(annotation.point).copy()
                 point[2] = np.floor(point[2])
                 annotation.point = map_points(self.field, [point], inverse=not aligned)[0]
-        for name, result in (('sam_preview', self.preview), ('sam_accepted', self.accepted)):
+        results = [(layer_name(key), value) for key, value in self.review_objects.objects.items()]
+        for name, result in [('sam_preview', self.preview), ('sam_final', self.review_objects.final), *results]:
             if result is not None:
                 self._render_mask(state, name, result, aligned)
 
-    def accept(self, action=None):
+    def _object_annotations(self):
+        records = []
+        for label, name in POINT_LAYERS.items():
+            for annotation in self.viewer.state.layers[name].annotations:
+                if annotation.type != 'point':
+                    raise ValueError('Only point annotations are supported')
+                records.append(dict(id=annotation.id, label=label,
+                                    point=self._native([annotation.point])[0].tolist(),
+                                    description=annotation.description))
+        return records
+
+    def _render_object_points(self, state, result, aligned):
+        for label, name in POINT_LAYERS.items():
+            records = [record for record in result.get('annotations', []) if record['label'] == label]
+            saved_name = f'{layer_name(result["object_id"])}_{name}'
+            if not records:
+                if saved_name in state.layers and not state.layers[saved_name].annotations:
+                    del state.layers[saved_name]
+                continue
+            points = np.asarray([record['point'] for record in records]).reshape(-1, 3)
+            if aligned and len(points):
+                points = map_points(self.field, points)
+            annotations = [neuroglancer.PointAnnotation(id=record['id'], point=point,
+                            description=record.get('description') or ('positive' if label else 'negative'))
+                           for record, point in zip(records, points)]
+            state.layers[saved_name] = neuroglancer.LocalAnnotationLayer(
+                dimensions=state.dimensions, annotation_color=result['color'] if label else '#ff4060',
+                annotations=annotations)
+
+    def _check_preview(self, action=None):
+        if self.future is not None and not self.future.done():
+            raise ValueError('Wait for the current prediction before saving the object')
         if self.preview is None:
-            raise ValueError('Run a prediction before accepting')
+            raise ValueError('Run I or V before saving this object; its points are retained')
         if not self._matches(self.preview['snapshot']):
             self._invalidate()
-            raise ValueError('Points changed after prediction; press I or V to rerun before accepting')
+            raise ValueError('Points changed after prediction; press I or V to rerun before saving')
         self._check_client_prompts(action, self.preview['snapshot'])
         if not self.preview['mask'].any():
             raise ValueError('Empty masks cannot be accepted; adjust the prompts')
-        path = self.preview['folder'] / 'accepted.json'
-        if not path.exists():
-            with path.open('x', encoding='utf-8') as stream:
-                json.dump({'accepted_at': datetime.now(timezone.utc).isoformat(),
-                           'prediction': 'prediction.npz', 'metadata': 'metadata.json'}, stream, indent=2)
-        self.accepted = self.preview
+
+    def _save_current_object(self, action=None):
+        self._check_preview(action)
+        annotations = self._object_annotations()
+        self.accepted = self.review_objects.accept(self.preview, annotations)
         with self.viewer.txn() as state:
-            self._render_mask(state, 'sam_accepted', self.accepted, self.mode['aligned'])
+            self._render_mask(state, layer_name(self.accepted['object_id']), self.accepted, self.mode['aligned'])
+            self._render_object_points(state, self.accepted, self.mode['aligned'])
             del state.layers['sam_preview']
+            for label, name in POINT_LAYERS.items():
+                state.layers[name] = neuroglancer.LocalAnnotationLayer(dimensions=state.dimensions,
+                    annotation_color=self.review_objects.color if label else '#ff4060')
+            state.selected_layer.layer = POINT_LAYERS[1]
+            if 'sam_final' in state.layers:
+                state.layers['sam_final'].visible = False
         self.preview = None
-        self.status(f'Accepted mask saved to {path.parent}. Keep points to refine this object; C starts another. ' + HELP)
+        self.image_history.clear()
+        self.edit_history.clear()
+        self.cancel_event.set()
+        self.generation += 1
+        self._cancel_merge()
+
+    def _merge_ready(self, action=None):
+        if self.future is not None and not self.future.done():
+            raise ValueError('Wait for the current prediction before merging')
+        states = [self.viewer.state]
+        if action is not None and all(name in action.viewer_state.layers for name in POINT_LAYERS.values()):
+            states.append(action.viewer_state)
+        has_points = any(len(state.layers[name].annotations) for state in states for name in POINT_LAYERS.values())
+        if self.preview is not None or has_points:
+            self._check_preview(action)
+        if not self.review_objects.objects and self.preview is None:
+            raise ValueError('Predict at least one object before accepting the final result')
+        return (tuple((key, str(result['folder'])) for key, result in self.review_objects.objects.items()),
+                str(self.preview['folder']) if self.preview is not None else None,
+                json.dumps(self._object_annotations(), sort_keys=True))
+
+    def request_merge(self, action=None):
+        objects = self._merge_ready(action)
+        self._cancel_merge()
+        self.merge_pending = dict(objects=objects, stage=1, expires=time.monotonic()+60)
+        with self.viewer.config_state.txn() as state:
+            for scope in ('viewer', 'slice_view'):
+                bindings = getattr(state.input_event_bindings, scope)
+                for key, value in (('enter', 'prompt-merge-confirm'), ('escape', 'prompt-merge-cancel')):
+                    self.confirmation_bindings[scope, key] = bindings.get(key)
+                    bindings[key] = value
+        count = len(self.review_objects.objects) + int(self.preview is not None)
+        self.status(f'Accept/save all {count} objects in this window as one combined mask? '
+                    'Confirmation 1/2: press Enter to continue, or Esc to cancel.', controls=False)
+
+    def _cancel_merge(self):
+        self.merge_pending = None
+        if self.confirmation_bindings:
+            with self.viewer.config_state.txn() as state:
+                for (scope, key), previous in self.confirmation_bindings.items():
+                    bindings = getattr(state.input_event_bindings, scope)
+                    if previous is None:
+                        if key in bindings:
+                            del bindings[key]
+                    else:
+                        bindings[key] = previous
+            self.confirmation_bindings.clear()
+
+    def cancel_merge(self, _=None):
+        self._cancel_merge()
+        self.status('Final acceptance cancelled; objects, previews and point layers are retained.')
+
+    def confirm_merge(self, action=None):
+        pending = self.merge_pending
+        if pending is None:
+            raise ValueError('Request final acceptance before confirming')
+        if time.monotonic() > pending['expires']:
+            raise ValueError('Acceptance confirmation expired; start a new request')
+        if self._merge_ready(action) != pending['objects']:
+            raise ValueError('Accepted objects changed; request the merge again')
+        if pending['stage'] == 1:
+            pending['stage'] = 2
+            self.status('Confirmation 2/2: press Enter again to save the combined mask. '
+                        'All individual object and point layers are retained. Esc cancels.', controls=False)
+            return
+        if self.preview is not None:
+            self._save_current_object(action)
+        old_ids = tuple(self.review_objects.objects)
+        final = self.review_objects.merge()
+        with self.viewer.txn() as state:
+            for object_id in old_ids:
+                name = layer_name(object_id)
+                if name in state.layers:
+                    state.layers[name].visible = False
+            self._render_mask(state, 'sam_final', final, self.mode['aligned'])
+            state.layers['sam_final'].visible = True
+        self._cancel_merge()
+        self.status(f'Accepted/saved {len(old_ids)} objects as sam_final. '
+                    'Individual mask layers are hidden; all object and point layers are retained.')
 
     def close(self):
         with self.lock:

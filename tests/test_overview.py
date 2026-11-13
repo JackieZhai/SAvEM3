@@ -27,7 +27,7 @@ def info(resolution=(4, 6, 30), offset=(10, 20, 40), size=(200, 300, 100), kind=
 def test_overview_bounds_use_physical_coordinates_and_remain_unregistered(tmp_path):
     raw = tmp_path/'roi/raw';raw.mkdir(parents=True)
     (raw/'info').write_text(json.dumps(info((8, 12, 30), (8, 15, 50), (6, 8, 4))))
-    item = dict(name='LC-NE test overview', kind='overview', raw_path='raw', seg_path='labels')
+    item = dict(name='Fish-X LC-NE Test overview', kind='overview', raw_path='raw', seg_path='labels')
     windows = [item, dict(name='Neuron A', seed=2**63+3, local_dir=tmp_path/'roi')]
     boxes = roi_boxes(windows, info())
     assert boxes[0]['point_a'] == [16, 30, 50]
@@ -53,14 +53,63 @@ def test_overview_bounds_use_physical_coordinates_and_remain_unregistered(tmp_pa
 def test_manifest_accepts_overview_without_seed_and_resolves_source_paths(tmp_path):
     manifest = tmp_path/'windows.json'
     manifest.write_text(json.dumps({'schema_version': 1, 'windows': [
-        dict(kind='overview', name='LC-NE test overview', raw_path='data/raw', seg_path='data/lc')]}))
+        dict(kind='overview', name='Fish-X LC-NE Test overview', raw_path='data/raw', seg_path='data/lc')]}))
     windows, initial = read_windows(manifest)
     assert initial == 0 and windows[0]['kind'] == 'overview'
     assert windows[0]['raw_path'] == str(tmp_path/'data/raw')
 
 
+def test_manifest_accepts_label_only_overview_and_resolves_saved_boxes(tmp_path):
+    manifest = tmp_path/'windows.json'
+    manifest.write_text(json.dumps({'schema_version': 1, 'windows': [dict(
+        kind='overview', name='Fish-X LC-NE Test overview', seg_path='data/lc',
+        test_windows_path='test_windows.json')]}))
+    windows, initial = read_windows(manifest)
+    assert initial == 0 and 'raw_path' not in windows[0]
+    assert windows[0]['seg_path'] == str(tmp_path/'data/lc')
+    assert windows[0]['test_windows_path'] == str(tmp_path/'test_windows.json')
+
+
+def test_saved_test_windows_must_match_native_roi_geometry(tmp_path):
+    item = dict(kind='overview', name='Fish-X LC-NE Test overview', seg_path='lc')
+    raw = tmp_path/'roi/raw';raw.mkdir(parents=True)
+    (raw/'info').write_text(json.dumps(info((8, 12, 30), (8, 15, 50), (6, 8, 4))))
+    windows = [item, dict(name='Neuron A', seed=30001, local_dir=tmp_path/'roi')]
+    viewer, _ = build_overview(item, windows, None, info(kind='segmentation'), None, 'lc')
+    payload = viewer.state.layers['test_windows'].layer.to_json()
+    payload['annotations'][0]['pointA'][0] += 1
+    path = tmp_path/'boxes.json';path.write_text(json.dumps(payload))
+    item['test_windows_path'] = str(path)
+    with pytest.raises(ValueError, match='do not match'):
+        build_overview(item, windows, None, info(kind='segmentation'), None, 'lc')
+
+
+def test_portable_mesh_names_work_over_http_without_colons_on_disk(tmp_path):
+    source = tmp_path/'source';(source/'mesh').mkdir(parents=True)
+    metadata = dict(info(kind='segmentation'), mesh='mesh', probe_em_filename_encoding='percent')
+    (source/'info').write_text(json.dumps(metadata))
+    payload = gzip.compress(b'encoded mesh vertices and faces')
+    (source/'mesh/30001%3A0').write_text('{"fragments": ["30001:0:fragment"]}')
+    (source/'mesh/30001%3A0%3Afragment.gz').write_bytes(payload)
+    files = PrecomputedFiles(tmp_path/'cache');files.register('lc', source)
+    collection = WindowCollection([{'name': 'overview'}], lambda *_: None)
+    server, url = serve_windows(collection, volumes=files)
+    try:
+        with urllib.request.urlopen(url+'data/lc/mesh/30001%3A0') as response:
+            assert json.load(response)['fragments'] == ['30001:0:fragment']
+        with urllib.request.urlopen(url+'data/lc/mesh/30001:0:fragment') as response:
+            assert response.headers['Content-Encoding'] == 'gzip'
+            assert gzip.decompress(response.read()) == b'encoded mesh vertices and faces'
+        assert not any(':' in p.name for p in (tmp_path/'cache').rglob('*'))
+        for request in ['lc/../outside', 'lc/%2e%2e/outside', 'lc/mesh/../../outside']:
+            with pytest.raises(FileNotFoundError):
+                files.resolve(request)
+    finally:
+        server.shutdown();server.server_close();collection.close()
+
+
 def test_context_images_are_confined_to_overview_and_match_physical_extent(tmp_path):
-    item = dict(name='LC-NE test overview', kind='overview', raw_path='raw', seg_path='labels', segments=[30001])
+    item = dict(name='Fish-X LC-NE Test overview', kind='overview', raw_path='raw', seg_path='labels', segments=[30001])
     sources = {name: (info(), f'precomputed://http://localhost/{name}') for name in ('mito', 'syn', 'ves')}
     viewer, report = build_overview(item, [item], info(), info(kind='segmentation'),
                                     'precomputed://http://localhost/raw', 'precomputed://http://localhost/lc', sources)
@@ -93,7 +142,7 @@ def test_status_moves_to_toolbar_and_remains_live_per_viewer():
 
 
 def test_overview_label_context_preserves_type_and_checks_extent():
-    item = dict(name='LC-NE test overview', raw_path='raw', seg_path='lc',
+    item = dict(name='Fish-X LC-NE Test overview', raw_path='raw', seg_path='lc',
                 kind='overview', visible_layers=['lcpre'])
     sources = {name: (info(kind='segmentation'), f'precomputed://http://localhost/{name}')
                for name in ('lcpre', 'lcsyn')}

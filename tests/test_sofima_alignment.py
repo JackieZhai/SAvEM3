@@ -140,7 +140,7 @@ def test_interactive_dense_field_maps_prompts_and_saves_replayable_transform(tmp
         for _ in range(2):
             viewer.actions.invoke('toggle-alignment', {})
             assert session._matches(session.preview['snapshot'])
-        viewer.actions.invoke('prompt-accept', {})
+        viewer.actions.invoke('prompt-clear', {})
         with np.load(session.accepted['folder']/'prediction.npz', allow_pickle=False) as saved:
             assert str(saved['display_field_kind']) == field.kind
             assert 'display_matrix' not in saved

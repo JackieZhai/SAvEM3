@@ -1,6 +1,6 @@
-# LC-NE test
+# Fish-X LC-NE Test
 
-LC-NE test is the test dataset supplied with SAEM²-SAEvM³. It contains cropped,
+Fish-X LC-NE Test is the test dataset supplied with SAEM²-SAEvM³. It contains cropped,
 SOFIMA-aligned zebrafish EM with normalized raw intensities, corresponding context
 volumes, and selected neuron annotations. The release includes five process
 windows for the [Neuroglancer demo](../probe-em/README_windows.md).
@@ -43,41 +43,100 @@ The whole-volume SOFIMA field is anchored at section 791 and applied to all
 corresponding volumes. CLAHE is applied to raw only. The shared crop excludes
 no-data margins. The dataset card contains the sampling and provenance details.
 
-## Download and open
+## Choose a dataset option
 
-The release is hosted at
-[JackieZhai/Fish-X_LC-NE_Test on Hugging Face](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test).
-Access requests are enabled with manual approval. Sign in to Hugging Face and
-request access on the dataset page. Once approved, authenticate the CLI with
-the same account before downloading:
+| Option | Included views | Data setup |
+| --- | --- | --- |
+| `examples` (default) | lc overview with five boxes, then five process examples | Bundled in this repository, about 114 MiB |
+| `full` | Full overview with bounding boxes, then the same five examples | Download and extract the full Hugging Face release first, about 201 GB |
+
+Both use the same images, reference labels, and supplied local realignment fields
+for the five boxes. Fresh review directories also load eight saved tracing objects
+and their 55 annotation points from the bundled starter session. Existing reviews
+are preserved. Add `--no-starter-session` with a new output directory to start blank.
+SAM2 weights and [viewer dependencies](../probe-em/INSTALL.md)
+must be installed separately. The examples need no Hugging Face account.
+
+### 1. Bundled lc overview and five examples
+
+From the repository root:
+
+```bash
+python probe-em/scripts/demo_windows.py --dataset examples --checkpoint /models/sam2_hiera_tiny.pt --output-dir .cache/fish-x-review --open
+```
+
+The launcher verifies and extracts the archives in
+[`probe-em/examples/fish_x_lc_ne/`](../probe-em/examples/fish_x_lc_ne/README.md)
+to `OUTPUT/dataset/`. It starts at **Fish-X LC-NE Test overview** with the full
+`lc` segmentation, neuron meshes, and `test_windows` bounding-box annotations.
+The selector also contains the five locally realigned process examples.
+Omitting `--dataset` selects this option as well.
+
+The five raw/label/field archives total about 78 MiB. `lc.zip` adds the complete
+six-resolution label volume and supplied meshes in about 36 MiB, while
+`test_windows.json` stores the five annotation boxes in under 2 KiB. Full-volume
+raw and context images are provided by option 2. Raw images remain available
+inside every bundled process example.
+
+### 2. Full dataset from Hugging Face
+
+The public release is hosted at
+[JackieZhai/Fish-X_LC-NE_Test](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test),
+with manually approved access requests. Request access on the dataset page, then
+authenticate with the approved account. Download the release matching the bundled
+boxes using the [Hugging Face CLI](https://huggingface.co/docs/huggingface_hub/guides/cli#hf-download):
 
 ```bash
 python -m pip install --upgrade huggingface_hub
 hf auth login
+hf download JackieZhai/Fish-X_LC-NE_Test --repo-type dataset --revision b209e99872579da55d1855422a13bb1affcd2872 --local-dir /data/fish-x-package
 ```
 
-For the five process windows, follow the
-[setup tutorial](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test/blob/main/TUTORIAL.md)
-to download and extract the approximately 78 MiB demo archive. The full release,
-including the overview volumes, is approximately 201 GB:
+Allow approximately 201 GB for the download and another 201 GB for extracted
+volumes, plus review outputs and caches. Use paths appropriate to your machine.
+On Windows, restore the full volumes into a WSL Linux filesystem and run the
+full viewer there: their legacy mesh filenames contain colons. The bundled
+option, including the lc overview, works on native Windows, macOS, and Linux.
+
+Restore all seven volumes with the release's Python utility, which verifies
+archive/member checksums and resumes matching existing files:
 
 ```bash
-hf download JackieZhai/Fish-X_LC-NE_Test \
-  --repo-type dataset --local-dir /data/lc-ne-package
+python /data/fish-x-package/restore.py restore --package /data/fish-x-package/zfishlc_raw --destination /data/Fish-X-LC-NE-Test
+python /data/fish-x-package/restore.py restore --package /data/fish-x-package/zfishlc_lc --destination /data/Fish-X-LC-NE-Test
+python /data/fish-x-package/restore.py restore --package /data/fish-x-package/zfishlc_mito --destination /data/Fish-X-LC-NE-Test
+python /data/fish-x-package/restore.py restore --package /data/fish-x-package/zfishlc_syn --destination /data/Fish-X-LC-NE-Test
+python /data/fish-x-package/restore.py restore --package /data/fish-x-package/zfishlc_ves --destination /data/Fish-X-LC-NE-Test
+python /data/fish-x-package/restore.py restore --package /data/fish-x-package/zfishlc_lcpre --destination /data/Fish-X-LC-NE-Test
+python /data/fish-x-package/restore.py restore --package /data/fish-x-package/zfishlc_lcsyn --destination /data/Fish-X-LC-NE-Test
 ```
 
-The release contains seven sets of independent ZIP64 parts, `restore.py`,
-checksums, and `demo/lc_ne_process_windows.zip`. Extract all parts of each volume
-into the same destination; do not concatenate ZIP parts. The demo archive contains
-five cached ROIs, their local alignment fields, and relative-path manifests.
+Each ZIP64 part is an independent archive; do not concatenate parts. The
+destination now contains all seven `zfishlc_*` directories, each with `info`
+and six scale directories. No separate extraction of the Hugging Face demo ZIP
+is needed: the launcher uses the same five boxes already bundled in this repo.
 
-The tutorial covers verification, extraction, installation, and demo controls.
-Dataset files are distributed separately from this Git repository under Apache-2.0.
+Start from the repository root:
+
+```bash
+python probe-em/scripts/demo_windows.py --dataset full --data-root /data/Fish-X-LC-NE-Test --checkpoint /models/sam2_hiera_tiny.pt --output-dir .cache/fish-x-review --open
+```
+
+The initial view is **Fish-X LC-NE Test overview**, with all five named boxes.
+The window selector also offers each locally realigned example. The launcher
+checks the seven volumes and their geometry before starting the viewer. It
+does not initiate a full download. To check setup without loading a model,
+replace `--checkpoint ... --open` with `--prepare-only`.
+
+Saved objects use `OUTPUT/neuron_<ID>/interactive/` in both options, so they stay
+with their neuron when switching modes. The example archives and full dataset
+are licensed under Apache-2.0.
 
 ## Demo views
 
-**LC-NE test overview** shows the complete release with five ROI boxes and
-optional context layers. It uses the dataset geometry without additional local
+**Fish-X LC-NE Test overview** shows the complete lc labels and meshes with five
+ROI boxes in both options. The full option adds whole-volume raw and optional
+context layers. The overview uses the dataset geometry without additional local
 realignment. Each process window uses its supplied local residual field by
 default. **R** toggles that local realignment.
 

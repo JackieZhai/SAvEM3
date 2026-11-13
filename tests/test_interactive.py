@@ -116,7 +116,7 @@ def test_explicit_multi_point_run_alignment_toggle_and_accept(session):
     np.testing.assert_array_equal(session.preview['mask'], original_mask)
     action(session, 'toggle-alignment')
     assert session._matches(session.preview['snapshot'])
-    action(session, 'prompt-accept')
+    action(session, 'prompt-clear')
     folder = session.accepted['folder']
     assert session.preview is None and (folder / 'accepted.json').is_file()
     metadata = json.loads((folder / 'metadata.json').read_text())
@@ -193,7 +193,7 @@ def test_relative_navigation_and_stop_tolerate_pending_client_frame_updates(sess
     assert session.cancel_event.is_set()
 
 
-def test_clear_and_edits_during_prediction_discard_stale_result(session):
+def test_stop_and_edits_during_prediction_discard_stale_result(session):
     session.model.release = threading.Event()
     point(session, [106, 207, 301])
     action(session, 'prompt-run')
@@ -201,7 +201,7 @@ def test_clear_and_edits_during_prediction_discard_stale_result(session):
     first = session.future
     action(session, 'prompt-run')
     assert session.future is first  # No unbounded job queue.
-    action(session, 'prompt-clear')
+    action(session, 'prompt-stop')
     session.model.release.set()
     first.result(timeout=15)
     assert session.preview is None and not list(session.output.glob('prediction_*'))
@@ -290,7 +290,7 @@ def test_stale_refinement_cannot_seed_the_next_object(session):
     point(session,[106,207,301])
     action(session,'prompt-run')
     assert session.model.started.wait(10)
-    action(session,'prompt-clear')
+    action(session,'prompt-stop')
     session.model.release.set()
     session.future.result(timeout=15)
     assert session.preview is None and not session.image_history

@@ -26,6 +26,16 @@
     document.addEventListener('pointercancel', finishDrag, true);
     window.addEventListener('blur', () => { dragPointer = null; });
     document.addEventListener('keydown', event => {
+      const target = event.target;
+      if (!config.review_controls || !event.repeat || event.isComposing || event.altKey ||
+          event.ctrlKey || event.metaKey || event.shiftKey ||
+          !['KeyY', 'KeyC', 'Enter', 'NumpadEnter'].includes(event.code)) return;
+      if (target instanceof Element && (target.closest('input,textarea,select') || target.isContentEditable)) return;
+      // Acceptance and each merge confirmation require a distinct key press.
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
+    document.addEventListener('keydown', event => {
       if (!['KeyD', 'KeyF'].includes(event.code) || event.isComposing ||
           event.altKey || event.ctrlKey || event.metaKey || (event.shiftKey && dragPointer === null)) return;
       const target = event.target;

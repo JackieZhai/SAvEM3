@@ -1,0 +1,94 @@
+{
+  "name": "Fish-X LC-NE Test",
+  "license": "Apache-2.0",
+  "source_repository": "JackieZhai/Fish-X_LC-NE_Test",
+  "source_revision": "b209e99872579da55d1855422a13bb1affcd2872",
+  "source_archive_sha256": "37c6da6cdc8e3972bc3ac63fdce9204d8068ed9f60b164fadca9f9b2af18c0cd",
+  "archives": [
+    {
+      "file": "neuron_30001.zip",
+      "sha256": "b3a3073db8148c467a006041b59457d4aa81f9e47d9d38341f1a33a76f558a42",
+      "bytes": 16323412,
+      "files": 389
+    },
+    {
+      "file": "neuron_30002.zip",
+      "sha256": "233ed6c8aa0bf5ae1eca8df3c5afc932b5fe35ac4098cba7e602b4a76b2b2ac6",
+      "bytes": 16363155,
+      "files": 389
+    },
+    {
+      "file": "neuron_30003.zip",
+      "sha256": "6e1e9e1c58a9ef29c5b21af25fed3779cc2d8ff7877a2c65fabfd0d948860095",
+      "bytes": 16417985,
+      "files": 389
+    },
+    {
+      "file": "neuron_30004.zip",
+      "sha256": "1749dfa70507245d7552aef70d40cdf89787493e373ec363dfd03b9a0c693aa9",
+      "bytes": 16411793,
+      "files": 389
+    },
+    {
+      "file": "neuron_30005.zip",
+      "sha256": "476f76d10f8cd0145c2d851ea616815bfc54cce5aad7bc035daf17694399d48e",
+      "bytes": 16360632,
+      "files": 389
+    },
+    {
+      "file": "lc.zip",
+      "sha256": "a8e42848a4f174f8d3fd96b1b59bb39d5b494adad9dcb46786d753b45e85a530",
+      "bytes": 38076671,
+      "files": 19456,
+      "modes": [
+        "examples"
+      ],
+      "source_archive": "zfishlc_lc/zfishlc_lc.zip",
+      "source_archive_sha256": "2391ac724fbc78bab32b35674d73ef2e5f88a5477572ec633fae1799a9791372",
+      "filename_encoding": "percent"
+    },
+    {
+      "file": "starter_session.zip",
+      "sha256": "322bfde59dd4ec1ddd10c213b700aa6f8557495a298b3b6e0d9c078005cb3371",
+      "bytes": 195738,
+      "files": 34
+    }
+  ],
+  "windows_sha256": "2e9a348009aad443aa626a06011be5c502a84126468e57b6e26ee40223f27259",
+  "test_windows_sha256": "e14d37a20e0e4f0dfbc2cf5263a76ca98c267b68f98c44ab3b74743f26dd3042",
+  "starter_session": {
+    "captured_at": "2026-11-12T23:56:01.188489+00:00",
+    "windows": [
+      {
+        "neuron": 30001,
+        "objects": 1,
+        "positive": 7,
+        "negative": 7
+      },
+      {
+        "neuron": 30002,
+        "objects": 1,
+        "positive": 9,
+        "negative": 16
+      },
+      {
+        "neuron": 30003,
+        "objects": 2,
+        "positive": 2,
+        "negative": 0
+      },
+      {
+        "neuron": 30004,
+        "objects": 2,
+        "positive": 2,
+        "negative": 0
+      },
+      {
+        "neuron": 30005,
+        "objects": 2,
+        "positive": 7,
+        "negative": 5
+      }
+    ]
+  }
+}

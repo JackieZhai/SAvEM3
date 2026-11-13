@@ -50,6 +50,31 @@ def test_switching_preserves_state_and_deduplicates_loading_requests():
         release.set(); collection.close()
 
 
+def test_review_buttons_route_to_the_loaded_window_and_require_json():
+    invoked = []
+    session = SimpleNamespace(lock=threading.RLock(), future=None, merge_pending=None, close=lambda: None)
+    viewer = SimpleNamespace(probe_em_interactive=session,
+                             actions=SimpleNamespace(invoke=lambda name, payload: invoked.append(name)),
+                             get_viewer_url=lambda: 'http://localhost/viewer')
+    collection = WindowCollection([{'name': 'one'}], lambda *args: viewer)
+    server, url = serve_windows(collection)
+    try:
+        collection.request(0); collection.futures[0].result(timeout=5)
+        assert collection.status(0)['review'] == {'enabled': True, 'busy': False, 'confirmation_stage': None}
+        for operation, expected in [('new-object', 'prompt-clear'), ('accept', 'prompt-accept'),
+                                    ('confirm', 'prompt-merge-confirm'), ('cancel', 'prompt-merge-cancel')]:
+            request = urllib.request.Request(url+'api/windows/0/review/'+operation, data=b'{}',
+                                             headers={'Content-Type': 'application/json'}, method='POST')
+            with urllib.request.urlopen(request) as response:
+                assert json.load(response)['review']['enabled']
+            assert invoked[-1] == expected
+        with pytest.raises(urllib.error.HTTPError) as error:
+            urllib.request.urlopen(urllib.request.Request(url+'api/windows/0/review/confirm', data=b'{}', method='POST'))
+        assert error.value.code == 415 and len(invoked) == 4
+    finally:
+        server.shutdown(); server.server_close(); collection.close()
+
+
 def test_failure_requires_explicit_retry_and_http_routes_are_scoped():
     calls = []
 

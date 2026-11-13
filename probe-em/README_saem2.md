@@ -5,12 +5,13 @@ The interactive viewer can use SAEM² for point-guided image prediction. Install
 trained SAEM² decoder with the same ViT architecture:
 
 ```bash
+python probe-em/scripts/demo_windows.py --dataset examples --prepare-only --output-dir .cache/fish-x-review
 python probe-em/scripts/demo.py \
-  --local-dir /data/LC-NE-test/demo/process_windows/neuron_30001/cache \
+  --local-dir .cache/fish-x-review/dataset/process_windows/neuron_30001/cache \
   --seed 30001 --interactive --prompt-backend saem2 \
   --prompt-model-type vit_b --prompt-checkpoint /models/sam_hq_vit_b.pth \
   --prompt-decoder /models/saem2_decoder.pth --prompt-device auto \
-  --align-field /data/LC-NE-test/demo/process_windows/neuron_30001/alignment/field.npz \
+  --align-field .cache/fish-x-review/dataset/process_windows/neuron_30001/alignment/field.npz \
   --output-dir /data/saem2-review
 ```
 

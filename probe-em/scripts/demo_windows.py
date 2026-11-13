@@ -1,4 +1,4 @@
-"""Serve cached test windows with persistent annotations and a browser selector."""
+"""Open Fish-X LC-NE Test examples, its full overview, or a custom window manifest."""
 import argparse
 import json
 from pathlib import Path
@@ -6,22 +6,21 @@ import sys
 import threading
 import webbrowser
 
-import numpy as np
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from demo import build_viewer
-from probe_em.demo_alignment import map_points
-from probe_em.prompt_models import PointModel
-from probe_em.precomputed_files import PrecomputedFiles
-from probe_em.overview import build_overview
-from probe_em.viewer_status import attach_toolbar_status
-from probe_em.window_browser import WindowCollection, read_windows, serve_windows
+from probe_em.fish_x_lc_ne import DATASET_NAME, prepare_dataset, review_folder
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--windows', type=Path, required=True, help='Local window manifest JSON')
-    parser.add_argument('--checkpoint', required=True)
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument('--dataset', choices=['examples', 'full'],
+                        help='Fish-X LC-NE Test: bundled lc overview and five boxes (default), or full dataset')
+    source.add_argument('--windows', type=Path, help='Custom local window manifest JSON')
+    parser.add_argument('--data-root', type=Path, help='Extracted full dataset directory containing zfishlc_*')
+    parser.add_argument('--prepare-only', action='store_true', help='Prepare and validate data without starting the viewer')
+    parser.add_argument('--no-starter-session', action='store_true',
+                        help='Do not seed saved example prompts and traces into a fresh output directory')
+    parser.add_argument('--checkpoint', help='SAM2 checkpoint; required unless --prepare-only')
     parser.add_argument('--model-config', default='sam2_hiera_t.yaml')
     parser.add_argument('--device', default='auto')
     parser.add_argument('--sam2-runtime', choices=['torch', 'onnx'], default='torch')
@@ -38,11 +37,35 @@ def main():
     parser.add_argument('--bind', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=0)
     parser.add_argument('--open', action='store_true')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if not args.prepare_only and not args.checkpoint:
+        parser.error('--checkpoint is required unless --prepare-only is used')
+    if args.windows and args.data_root:
+        parser.error('--data-root belongs to --dataset full, not --windows')
+    output = args.output_dir.expanduser().resolve()
+    supplied_dataset = args.windows is None
+    try:
+        manifest = (prepare_dataset(args.dataset or 'examples', output/'dataset', args.data_root)
+                    if supplied_dataset else args.windows.expanduser().resolve())
+    except (OSError, ValueError) as error:
+        parser.error(str(error))
+    from probe_em.window_browser import WindowCollection, read_windows, serve_windows
+    windows, initial = read_windows(manifest)
+    if supplied_dataset:
+        print(f'{DATASET_NAME}: {args.dataset or "examples"}; {len(windows)} views', flush=True)
+    if args.prepare_only:
+        print(f'Window manifest: {manifest}', flush=True)
+        return
+
     import neuroglancer
+    import numpy as np
+    from demo import build_viewer
+    from probe_em.demo_alignment import map_points
+    from probe_em.prompt_models import PointModel
+    from probe_em.precomputed_files import PrecomputedFiles
+    from probe_em.overview import build_overview
+    from probe_em.viewer_status import attach_toolbar_status
     neuroglancer.set_server_bind_address(bind_address=args.bind, bind_port=0)
-    windows, initial = read_windows(args.windows)
-    output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
     volumes = PrecomputedFiles(args.overview_cache or output/'overview_cache')
     overview_info = {}
@@ -50,7 +73,7 @@ def main():
         if item['kind'] == 'overview':
             overview_info[index] = {
                 kind: volumes.register(f'overview_{index}_{kind}', item[kind+'_path'])
-                for kind in ('raw', 'seg')}
+                for kind in ('raw', 'seg') if item.get(kind+'_path')}
             overview_info[index]['images'] = {
                 name: (volumes.register(f'overview_{index}_image_{number}', path),
                        f'overview_{index}_image_{number}')
@@ -67,11 +90,12 @@ def main():
     model = PointModel(**options)
 
     def build(index, item):
-        folder = output/f'window_{index:03d}'
+        folder = review_folder(output, item, index, supplied_dataset=supplied_dataset)
         if item['kind'] == 'overview':
-            sources = {kind: f'precomputed://{url}data/overview_{index}_{kind}' for kind in ('raw', 'seg')}
-            viewer, report = build_overview(item, windows, overview_info[index]['raw'], overview_info[index]['seg'],
-                                           sources['raw'], sources['seg'], image_sources={
+            sources = {kind: f'precomputed://{url}data/overview_{index}_{kind}'
+                       for kind in ('raw', 'seg') if item.get(kind+'_path')}
+            viewer, report = build_overview(item, windows, overview_info[index].get('raw'), overview_info[index]['seg'],
+                                           sources.get('raw'), sources['seg'], image_sources={
                                                name: (info, f'precomputed://{url}data/{mount}')
                                                for name, (info, mount) in overview_info[index]['images'].items()},
                                            label_sources={
@@ -85,7 +109,8 @@ def main():
             align_cache=folder/'alignment', mesh_cache=folder/'meshes',
             image_layers=item['image_layers'], label_layers=item['label_layers'],
             interactive=dict(options, output_dir=folder/'interactive', propagation_radius=args.propagate_radius,
-                             propagation_max_slices=args.propagate_max_slices))
+                             propagation_max_slices=args.propagate_max_slices,
+                             starter_session=None if args.no_starter_session else item.get('starter_session')))
         session = viewer.probe_em_interactive
         try:
             session.model = model
@@ -121,7 +146,9 @@ def main():
                     state.layers[name].segment_colors = {'1': color}
                     state.layers[name].selected_alpha = .22 if name == 'ground_truth' else .35
                     state.layers[name].object_alpha = .35 if name == 'ground_truth' else .8
-            session.status('D/F: previous/next slice. Add P/N points; I predicts; V propagates. Each test window retains its points.')
+            from probe_em.starter_session import restore_starter_view
+            if not restore_starter_view(session, viewer.probe_em_starter_state):
+                session.status('D/F: previous/next slice. Add P/N points; I predicts; V propagates. Each test window retains its points.')
             report['interactive']['propagation_range_inclusive'] = session.propagation_range
             publish(viewer, report, folder, item, index)
         except BaseException:
@@ -137,7 +164,8 @@ def main():
         (folder/'viewer_url.txt').write_text(url+f'#window={index}\n', encoding='utf-8')
         (folder/'neuroglancer_url.txt').write_text(viewer.get_viewer_url()+'\n', encoding='utf-8')
 
-    collection = WindowCollection(windows, build, initial)
+    collection = WindowCollection(windows, build, initial,
+                                  dataset_name=DATASET_NAME if supplied_dataset else None)
     server, url = serve_windows(collection, args.bind, args.port, volumes=volumes)
     (output/'viewer_url.txt').write_text(url+'\n')
     print(f'SAEM²-SAEvM³ window browser: {url}', flush=True)

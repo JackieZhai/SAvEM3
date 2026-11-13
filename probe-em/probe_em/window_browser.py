@@ -25,10 +25,11 @@ def read_windows(path):
 
         kind = entry.setdefault('kind', 'roi')
         if kind == 'overview':
-            for key in ('raw_path', 'seg_path'):
-                if not entry.get(key):
-                    raise ValueError('An overview needs raw_path and seg_path precomputed directories')
-                entry[key] = local(entry[key])
+            if not entry.get('seg_path'):
+                raise ValueError('An overview needs a seg_path precomputed directory')
+            for key in ('raw_path', 'seg_path', 'test_windows_path'):
+                if entry.get(key):
+                    entry[key] = local(entry[key])
         elif kind == 'roi':
             if type(entry.get('seed')) is not int or not 0 < entry['seed'] < 2**64:
                 raise ValueError('Each ROI needs a positive uint64 seed')
@@ -39,6 +40,8 @@ def read_windows(path):
             raise ValueError('Window kind must be roi or overview')
         if entry.get('align_field'):
             entry['align_field'] = local(entry['align_field'])
+        if entry.get('starter_session'):
+            entry['starter_session'] = local(entry['starter_session'])
         for kind in ('image_layers', 'label_layers'):
             entry[kind] = {name: local(value) for name, value in entry.get(kind, {}).items()}
         if entry['kind'] == 'roi' and ({'mito', 'syn', 'ves'} &
@@ -54,8 +57,9 @@ def read_windows(path):
 class WindowCollection:
     """Each window is built once and keeps its own controller and review state."""
 
-    def __init__(self, windows, builder, initial=0):
+    def __init__(self, windows, builder, initial=0, *, dataset_name=None):
         self.windows, self.builder, self.initial = windows, builder, initial
+        self.dataset_name = dataset_name
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='probe-em-window')
         self.lock = threading.RLock()
         self.futures = {}
@@ -106,7 +110,25 @@ class WindowCollection:
                 raise IndexError('Unknown test window')
             viewer = self.viewers.get(index)
             feed = getattr(viewer, 'probe_em_toolbar_status', None)
-            return {'index': index, 'messages': feed.snapshot() if feed is not None else []}
+            session = getattr(viewer, 'probe_em_interactive', None)
+        review = {'enabled': session is not None}
+        if session is not None:
+            with session.lock:
+                review.update(busy=session.future is not None and not session.future.done(),
+                              confirmation_stage=session.merge_pending['stage'] if session.merge_pending else None)
+        return {'index': index, 'messages': feed.snapshot() if feed is not None else [], 'review': review}
+
+    def review_action(self, index, operation):
+        actions = {'new-object': 'prompt-clear', 'accept': 'prompt-accept',
+                   'confirm': 'prompt-merge-confirm', 'cancel': 'prompt-merge-cancel'}
+        if operation not in actions:
+            raise ValueError('Unknown review action')
+        with self.lock:
+            viewer = self.viewers.get(index)
+            if self.closed or getattr(viewer, 'probe_em_interactive', None) is None:
+                raise ValueError('Load a process window before reviewing objects')
+        viewer.actions.invoke(actions[operation], {})
+        return self.status(index)
 
 
 def serve_windows(collection, bind='127.0.0.1', port=0, volumes=None):
@@ -133,7 +155,7 @@ def serve_windows(collection, bind='127.0.0.1', port=0, volumes=None):
             if path == prefix:
                 self.respond(200, html, 'text/html; charset=utf-8')
             elif path == prefix+'/api/windows':
-                self.respond(200, {'initial_index': collection.initial, 'windows': [
+                self.respond(200, {'initial_index': collection.initial, 'dataset_name': collection.dataset_name, 'windows': [
                     {'index': i, 'name': item['name'], 'kind': item.get('kind', 'roi')}
                     for i, item in enumerate(collection.windows)]})
             elif path.startswith(prefix+'/data/') and volumes is not None:
@@ -165,7 +187,18 @@ def serve_windows(collection, bind='127.0.0.1', port=0, volumes=None):
 
         def do_POST(self):
             path = urlsplit(self.path).path.rstrip('/')
-            if path.startswith(prefix+'/api/windows/') and path.endswith('/retry'):
+            if path.startswith(prefix+'/api/windows/') and '/review/' in path:
+                if self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
+                    self.respond(415, {'error': 'Review actions require application/json'})
+                    return
+                try:
+                    parts = path.split('/')
+                    if parts[-2] != 'review':
+                        raise ValueError('Unknown review action')
+                    self.respond(200, collection.review_action(int(parts[-3]), parts[-1]))
+                except (ValueError, IndexError) as error:
+                    self.respond(400, {'error': str(error)})
+            elif path.startswith(prefix+'/api/windows/') and path.endswith('/retry'):
                 try:
                     self.respond(200, collection.request(int(path.split('/')[-2]), retry=True))
                 except (ValueError, IndexError):

@@ -63,7 +63,7 @@ def test_volume_actions_preserve_prompts_geometry_and_accept_complete_native_sta
         action(session, 'toggle-alignment')
         assert session._matches(result['snapshot'])
         np.testing.assert_array_equal(result['mask'], original_mask)
-    action(session, 'prompt-accept')
+    action(session, 'prompt-clear')
     assert (result['folder']/'accepted.json').is_file()
     with np.load(result['folder']/'prediction.npz', allow_pickle=False) as saved:
         np.testing.assert_array_equal(saved['mask_zyx'], original_mask)
@@ -73,7 +73,8 @@ def test_volume_actions_preserve_prompts_geometry_and_accept_complete_native_sta
     action(session, 'prompt-run')
     session.future.result(timeout=15)
     assert session.preview['snapshot']['scope'] == 'image' and session.accepted is result
-    assert len(session.viewer.state.layers['positive_points'].annotations) == 2
+    assert len(session.viewer.state.layers['positive_points'].annotations) == 1
+    assert len(session.viewer.state.layers['sam_object_001_positive_points'].annotations) == 1
 
 
 @pytest.mark.parametrize('registered', [False, True])
@@ -126,7 +127,7 @@ def test_video_range_backend_and_positive_anchor_validation_precede_model_loadin
     assert session.future is None and not calls
 
 
-@pytest.mark.parametrize('operation', ['prompt-stop', 'prompt-clear', 'edit'])
+@pytest.mark.parametrize('operation', ['prompt-stop', 'edit'])
 def test_video_cancellation_or_edits_never_publish_stale_masks(session, monkeypatch, operation):
     started, release = threading.Event(), threading.Event()
     video_stub(session, monkeypatch, started=started, release=release)

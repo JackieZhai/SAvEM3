@@ -3,12 +3,15 @@
 | Module | Responsibility |
 | --- | --- |
 | `interactive.py` | Per-object points, asynchronous image/video inference, previews, and acceptance |
+| `review_objects.py` | Saved object colors and point layers, native-mask unions, and review manifests |
+| `starter_session.py` | Validated installation of bundled reviews into fresh output directories and native/aligned view restoration |
 | `point_refinement.py` | SAM2 candidate selection and mask refinement using positive/negative points |
 | `prompt_models.py` | SAM/HQ-SAM/SAEM²/SAM2 adapters and corrected-mask video initialization |
 | `propagation.py` | Video input grids, frame encoding, and native-coordinate output mapping |
 | `window_browser.py` | Persistent per-window sessions and selector service |
+| `fish_x_lc_ne.py` | Bundled lc/box extraction, full-dataset validation, and stable per-neuron review folders |
 | `overview.py` | Multiscale image/label layers and process-window boxes |
-| `precomputed_files.py` | Scoped volume serving and disk chunk cache |
+| `precomputed_files.py` | Scoped volume serving, portable mesh filenames, and disk chunk cache |
 | `viewer_navigation.py`, `viewer_navigation.js` | D/F navigation during mouse dragging |
 | `viewer_status.py` | Live toolbar messages |
 | `sam2_acceleration.py` | Feature cache and optional ONNX encoder |

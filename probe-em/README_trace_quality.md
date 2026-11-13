@@ -27,6 +27,6 @@ Use a new output directory when changing data, checkpoints, alignment, or policy
 Keep the same saved field for tracing and display when alignment is enabled.
 
 Inspect accepted connections and crop boundaries in Neuroglancer. Existing
-instance agreement is not independent ground truth. For the supplied LC-NE
+instance agreement is not independent ground truth. For the supplied Fish-X LC-NE Test
 annotations, see [bounded evaluation](README_local_gt.md). Interactive I/V mask
 review and automatic fragment tracing are separate workflows.

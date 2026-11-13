@@ -97,10 +97,10 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
     from probe_em.alignment_field import warp_field_slice
     extra_sources, extra_ids, extra_paths = {False: {}, True: {}}, {}, {}
     reserved = {'raw', 'input_segments', 'probe_trace', 'manual_correction', 'skeletons',
-                'positive_points', 'negative_points', 'sam_preview', 'sam_accepted', *(comparison_ids or {})}
+                'positive_points', 'negative_points', 'sam_preview', 'sam_accepted', 'sam_final', *(comparison_ids or {})}
     for is_label, paths in ((False, image_layers), (True, label_layers)):
         for name, path in (paths or {}).items():
-            if not name or name in reserved or name in extra_paths:
+            if not name or name in reserved or name in extra_paths or name.startswith('sam_object_'):
                 raise ValueError(f'Reserved or duplicate auxiliary layer name: {name}')
             data, resolution, offset = load_local(path, max_voxels)
             if data.shape != raw.shape or not np.array_equal(resolution, raw_res) or not np.array_equal(offset, raw_offset):
@@ -163,7 +163,7 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
         state.layers['manual_correction'].visible = False
         for name, ids in (comparison_ids or {}).items():
             if name in ('raw', 'input_segments', 'probe_trace', 'manual_correction', 'skeletons',
-                        'positive_points', 'negative_points', 'sam_preview', 'sam_accepted'):
+                        'positive_points', 'negative_points', 'sam_preview', 'sam_accepted', 'sam_final') or name.startswith('sam_object_'):
                 raise ValueError(f'Reserved comparison layer name: {name}')
             state.layers[name] = neuroglancer.SegmentationLayer(
                 source=seg_source, segments=sorted(set(map(int, ids)) & available),
@@ -173,6 +173,8 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
             if name in extra_ids:
                 state.layers[name] = neuroglancer.SegmentationLayer(
                     source=source, segments=extra_ids[name], hover_highlight=False, pick=False)
+                if name == 'ground_truth':
+                    state.layers[name].segment_colors = {str(label): '#b0b0b0' for label in extra_ids[name]}
             else:
                 state.layers[name] = neuroglancer.ImageLayer(source=source)
             state.layers[name].visible = False
@@ -284,6 +286,11 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
         from probe_em.interactive import InteractiveSession
         options = dict(interactive)
         output_dir = options.pop('output_dir')
+        starter = options.pop('starter_session', None)
+        starter_state = None
+        if starter is not None:
+            from probe_em.starter_session import seed_review
+            starter_state = seed_review(starter, output_dir, raw, seg_offset, seg_res, local_dir)
         propagation = {key: options.pop(key) for key in ('propagation_radius', 'propagation_max_slices') if key in options}
         interactive_session = InteractiveSession(
             viewer, raw, seg_offset, seg_res, field,
@@ -291,6 +298,7 @@ def build_viewer(local_dir, traced_ids, seed, correction_dir, max_voxels=128_000
             mode, output_dir, options, mesh_isotropic=mesh_isotropic,
             mesh_target_nm=mesh_target_nm, source=local_dir, **propagation)
         viewer.probe_em_interactive = interactive_session
+        viewer.probe_em_starter_state = starter_state
     return viewer, {'seed': str(seed), 'segments': [str(value) for value in present],
                     'missing_ids': [str(value) for value in sorted(missing)],
                     'shape_xyz': list(seg.shape), 'resolution_xyz_nm': seg_res.tolist(),

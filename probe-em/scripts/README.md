@@ -1,13 +1,13 @@
 # Probe-EM scripts
 
 Run commands from the repository root after [installation](../INSTALL.md).
-[LC-NE test](../../docs/LC_NE_TEST.md) is the supplied demo dataset.
+[Fish-X LC-NE Test](../../docs/LC_NE_TEST.md) is the supplied demo dataset.
 
 ## Entry points
 
 | Script | Purpose |
 | --- | --- |
-| `demo_windows.py` | Overview and five persistent interactive process windows |
+| `demo_windows.py` | Fish-X LC-NE Test lc overview and five examples; full mode adds raw/context volumes |
 | `demo.py` | Interactive prediction or trace review on a local cache |
 | `run_probe_em.py` | Seed-based fragment tracing from a JSON configuration |
 | `export_savem3.py` | H5 raw and instances to precomputed volumes and optional skeletons |
@@ -21,18 +21,25 @@ Run commands from the repository root after [installation](../INSTALL.md).
 
 Use `python probe-em/scripts/SCRIPT.py --help` for complete arguments.
 
-## LC-NE test browser
+## Fish-X LC-NE Test browser
 
 ```bash
 python probe-em/scripts/demo_windows.py \
-  --windows /data/LC-NE-test/demo/windows.json \
+  --dataset examples \
   --checkpoint /models/sam2_hiera_tiny.pt \
   --model-config sam2_hiera_t.yaml --device auto \
-  --output-dir /data/review-output --open
+  --output-dir .cache/fish-x-review --open
 ```
 
-The dataset release's `TUTORIAL.md` describes extraction. Use
-`windows.roi-only.json` for the five process windows alone. See the
+This default option opens the bundled lc labels/meshes and `test_windows` boxes,
+with the five local examples in the selector. After
+[downloading and extracting the full dataset](../../docs/LC_NE_TEST.md#2-full-dataset-from-hugging-face),
+replace `--dataset examples` with `--dataset full --data-root /data/Fish-X-LC-NE-Test`
+to add whole-volume raw and context images to the overview. `--prepare-only` prepares and
+checks data without a model or server. `--windows PATH` accepts a custom manifest.
+Fresh review directories load the bundled saved objects and points. Use
+`--no-starter-session` with a new output directory to start blank.
+See the
 [window guide](../README_windows.md) and [interactive controls](../README_interactive.md).
 
 ## Meshes

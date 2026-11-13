@@ -191,6 +191,8 @@ data/AC3-AC4_new/
 data/AC3-AC4/AC4_features.h5
 data/AC3-AC4/AC4_embeddings.h5
 data/LC-NE-test/
+data/Fish-X-LC-NE-Test/
+data/Fish-X_LC-NE_Test/
 .conda-envs/
 .cache/
 trace_results/
@@ -205,3 +207,12 @@ local_backups/
 probe-em/demo_session_saem2*/
 repro/record2d_train_local.json
 repro/sampling_manifest_local.json
+
+# Published Fish-X LC-NE Test examples bundled with the viewer
+!probe-em/examples/fish_x_lc_ne/neuron_30001.zip
+!probe-em/examples/fish_x_lc_ne/neuron_30002.zip
+!probe-em/examples/fish_x_lc_ne/neuron_30003.zip
+!probe-em/examples/fish_x_lc_ne/neuron_30004.zip
+!probe-em/examples/fish_x_lc_ne/neuron_30005.zip
+!probe-em/examples/fish_x_lc_ne/lc.zip
+!probe-em/examples/fish_x_lc_ne/starter_session.zip

@@ -4,7 +4,7 @@ Tools for 3D neuron reconstruction from electron microscopy, with SAEM² image
 pretraining, SAvEM³ distillation, and interactive Neuroglancer review.
 
 [Training and inference](docs/WORKFLOW.md) ·
-[LC-NE test on Hugging Face](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test) ·
+[Fish-X LC-NE Test on Hugging Face](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test) ·
 [Dataset setup](docs/LC_NE_TEST.md) ·
 [Neuroglancer demo](probe-em/README_windows.md)
 
@@ -16,6 +16,7 @@ pretraining, SAvEM³ distillation, and interactive Neuroglancer review.
 | `saem2/` | SAEM² auxiliary pretraining code (HQ-SAM + membrane token) |
 | `savem3/` | SAvEM³ full-stage distillation code (3D residual U-Net) |
 | `probe-em/` | Probe-EM targeted neuron tracing and SAM 2 semantic verification |
+| `probe-em/examples/fish_x_lc_ne/` | Bundled Fish-X LC-NE Test lc overview, window boxes, and five local examples |
 | `repro/` | Data engine, MPS/CUDA environment scripts, graph-cut, postprocessing, evaluation |
 | `requirements-train.txt` | Python dependencies for SAEM²/SAvEM³ training |
 | `requirements-post.txt` | Python dependencies for waterz / elf / ERL postprocessing |
@@ -70,16 +71,24 @@ The postprocessing environment installs:
 
 ## Data and pretrained weights
 
-**[LC-NE test](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test)**
+**[Fish-X LC-NE Test](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test)**
 is the supplied test dataset: cropped, SOFIMA-aligned, normalized
-zebrafish EM with corresponding labels and context volumes. Its Neuroglancer
-demo contains an overview and five neuronal process windows. Access requests
-are enabled; request access on the dataset page and authenticate with the approved
-Hugging Face account before downloading. See the [dataset guide](docs/LC_NE_TEST.md)
-and [setup tutorial](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test/blob/main/TUTORIAL.md).
+zebrafish EM with corresponding labels and context volumes. Choose one of two
+[Neuroglancer launch options](probe-em/README_windows.md):
 
-Datasets and model checkpoints are distributed separately from the source code.
-Training data must be prepared separately; LC-NE test is reserved for testing.
+| Option | Data | Opening view |
+| --- | --- | --- |
+| `--dataset examples` (default) | Full lc labels/meshes, five bounding boxes, and five process examples bundled in this repository, about 114 MiB | lc overview with five boxes, followed by five examples |
+| `--dataset full --data-root PATH` | Full dataset downloaded and extracted from Hugging Face, about 201 GB | Overview with five boxes, followed by the same five examples |
+
+Both options load eight saved tracing objects and 55 annotation points into
+fresh review directories. Existing reviews are preserved; use
+`--no-starter-session` with a new output directory to start blank.
+The bundled examples need no Hugging Face download or login. For the full
+dataset, request access on the dataset page and authenticate with the approved
+account. See [dataset setup](docs/LC_NE_TEST.md) for download and extraction.
+Model checkpoints and training data are obtained separately. Fish-X LC-NE Test
+is reserved for testing.
 
 ### SAM / HQ-SAM weights
 
@@ -166,7 +175,7 @@ python scripts/run_probe_em.py --config configs/config.json
 ## License
 
 This project is licensed under the [Apache License 2.0](LICENSE), matching the
-LC-NE test dataset. See [NOTICE](NOTICE) for copyright and attribution information.
+Fish-X LC-NE Test dataset. See [NOTICE](NOTICE) for copyright and attribution information.
 
 Third-party components retain their own copyright and license notices, including
 the [AxonEM-challenge MIT license](repro/evaluate/AxonEM-challenge/LICENSE).

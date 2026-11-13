@@ -1,7 +1,9 @@
-# LC-NE test windows
+# Fish-X LC-NE Test windows
 
-The five process windows are supplied in `demo/lc_ne_process_windows.zip` with
-the [LC-NE test release](LC_NE_TEST.md). Each contains a 512 x 512 x 63 raw
+The five process windows are bundled in
+[`probe-em/examples/fish_x_lc_ne/`](../probe-em/examples/fish_x_lc_ne/README.md)
+and also included in the [Fish-X LC-NE Test release](LC_NE_TEST.md).
+Each contains a 512 x 512 x 63 raw
 cutout at 8 x 8 x 30 nm, instance labels, a binary target mask, and a local
 realignment field. Coordinates refer to the cropped, SOFIMA-aligned dataset.
 
@@ -17,7 +19,10 @@ All five use the same local alignment method and parameters, with a separate
 field fitted to each region. The fields preserve the whole-volume coordinate
 trend and fix each window's middle section. See [local realignment](../probe-em/README_alignment.md).
 
-`demo/windows.json` opens the overview plus these windows. For the five windows
-alone, use `demo/windows.roi-only.json`. The [window guide](../probe-em/README_windows.md)
+`--dataset examples` starts at the bundled lc overview, with neuron meshes and
+the five saved `test_windows` boxes, then offers these five local examples.
+`--dataset full --data-root PATH` adds whole-volume raw and context images to
+the overview after downloading and extracting the full volumes from Hugging Face.
+The [window guide](../probe-em/README_windows.md)
 contains the launch command. The supplied masks are reference annotations;
 interactive predictions are saved separately.

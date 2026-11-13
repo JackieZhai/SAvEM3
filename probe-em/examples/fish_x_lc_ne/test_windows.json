@@ -1,0 +1,102 @@
+{
+  "type": "annotation",
+  "source": [
+    {
+      "url": "local://annotations",
+      "transform": {
+        "outputDimensions": {
+          "x": [
+            8e-09,
+            "m"
+          ],
+          "y": [
+            8e-09,
+            "m"
+          ],
+          "z": [
+            3e-08,
+            "m"
+          ]
+        }
+      }
+    }
+  ],
+  "annotations": [
+    {
+      "type": "axis_aligned_bounding_box",
+      "id": "window_1",
+      "description": "Neuron 30001 process (11.0 um from soma)",
+      "pointA": [
+        6731.0,
+        3696.0,
+        1117.0
+      ],
+      "pointB": [
+        7243.0,
+        4208.0,
+        1180.0
+      ]
+    },
+    {
+      "type": "axis_aligned_bounding_box",
+      "id": "window_2",
+      "description": "Neuron 30002 process (15.6 um from soma)",
+      "pointA": [
+        5827.0,
+        4493.0,
+        653.0
+      ],
+      "pointB": [
+        6339.0,
+        5005.0,
+        716.0
+      ]
+    },
+    {
+      "type": "axis_aligned_bounding_box",
+      "id": "window_3",
+      "description": "Neuron 30003 process (23.2 um from soma)",
+      "pointA": [
+        7532.0,
+        4067.0,
+        485.0
+      ],
+      "pointB": [
+        8044.0,
+        4579.0,
+        548.0
+      ]
+    },
+    {
+      "type": "axis_aligned_bounding_box",
+      "id": "window_4",
+      "description": "Neuron 30004 process (29.9 um from soma)",
+      "pointA": [
+        8228.0,
+        4873.0,
+        149.0
+      ],
+      "pointB": [
+        8740.0,
+        5385.0,
+        212.0
+      ]
+    },
+    {
+      "type": "axis_aligned_bounding_box",
+      "id": "window_5",
+      "description": "Neuron 30005 process (38.0 um from soma)",
+      "pointA": [
+        4242.0,
+        1919.0,
+        1045.0
+      ],
+      "pointB": [
+        4754.0,
+        2431.0,
+        1108.0
+      ]
+    }
+  ],
+  "annotationColor": "#ffcb52"
+}

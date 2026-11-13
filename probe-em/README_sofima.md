@@ -2,7 +2,7 @@
 
 `demo.py --align-backend sofima` estimates a local elastic field using
 [SOFIMA](https://github.com/google-research/sofima). Use this option for a bounded
-raw/label cache. Opening the supplied LC-NE test fields does not require SOFIMA.
+raw/label cache. Opening the supplied Fish-X LC-NE Test fields does not require SOFIMA.
 
 ## Install the optional worker
 

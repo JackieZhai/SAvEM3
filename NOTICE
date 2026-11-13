@@ -3,6 +3,10 @@ Copyright (c) 2024 Hao Zhai
 
 Licensed under the Apache License, Version 2.0. See LICENSE for the full text.
 
+The bundled Fish-X LC-NE Test examples are distributed under Apache-2.0.
+Source: https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test
+Release revision and archive checksums: probe-em/examples/fish_x_lc_ne/manifest.json
+
 Third-party copyright and attribution notices are retained in their respective
 source files. Components with separate licenses retain those licenses, including
 the MIT license in repro/evaluate/AxonEM-challenge/LICENSE.

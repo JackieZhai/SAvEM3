@@ -42,12 +42,15 @@ def roi_boxes(windows, overview_info):
 
 def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url,
                    image_sources=None, label_sources=None):
-    resolution, offset, size = geometry(raw_info)
+    if (raw_info is None) != (raw_url is None):
+        raise ValueError('Overview raw metadata and source must be supplied together')
+    base_info = raw_info if raw_info is not None else seg_info
+    resolution, offset, size = geometry(base_info)
     seg_resolution, seg_offset, seg_size = geometry(seg_info)
     if not (np.allclose(offset*resolution, seg_offset*seg_resolution)
             and np.allclose((offset+size)*resolution, (seg_offset+seg_size)*seg_resolution)):
         raise ValueError('Overview raw and labels must cover the same physical volume')
-    boxes = roi_boxes(windows, raw_info)
+    boxes = roi_boxes(windows, base_info)
     dimensions = neuroglancer.CoordinateSpace(names=['x', 'y', 'z'], units='nm', scales=resolution)
     segments = item.get('segments', sorted({entry['seed'] for entry in windows if entry.get('kind', 'roi') == 'roi'}))
     if any(type(value) is not int or not 0 < value < 2**64 for value in segments):
@@ -64,12 +67,24 @@ def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url,
             context_resolution, context_offset, context_size = geometry(info)
             if not (np.allclose(context_offset*context_resolution, offset*resolution)
                     and np.allclose((context_offset+context_size)*context_resolution, (offset+size)*resolution)):
-                raise ValueError(f'Overview context layer {name!r} must cover the same physical volume as raw')
+                raise ValueError(f'Overview context layer {name!r} must cover the same physical volume as the overview')
+    annotations = neuroglancer.LocalAnnotationLayer(
+        dimensions=dimensions, annotation_color='#ffcb52',
+        annotations=[neuroglancer.AxisAlignedBoundingBoxAnnotation(
+            id=box['id'], description=box['name'], point_a=box['point_a'], point_b=box['point_b'])
+            for box in boxes])
+    if item.get('test_windows_path'):
+        supplied = json.loads(Path(item['test_windows_path']).read_text(encoding='utf-8'))
+        if supplied != annotations.to_json():
+            raise ValueError('Saved test_windows annotations do not match the window geometry')
+        annotations = neuroglancer.AnnotationLayer(supplied)
     with viewer.txn() as state:
         state.dimensions = dimensions
-        state.layers['raw'] = neuroglancer.ImageLayer(source=raw_url)
+        if raw_url is not None:
+            state.layers['raw'] = neuroglancer.ImageLayer(source=raw_url)
         state.layers['lc'] = neuroglancer.SegmentationLayer(source=seg_url, segments=segments,
-                                                          selected_alpha=.25, object_alpha=.75,
+                                                          selected_alpha=.25 if raw_url is not None else .8,
+                                                          object_alpha=.75,
                                                           hover_highlight=False)
         for name, (_, source) in image_sources.items():
             state.layers[name] = neuroglancer.ImageLayer(source=source)
@@ -78,11 +93,7 @@ def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url,
             state.layers[name] = neuroglancer.SegmentationLayer(source=source,
                                                               hover_highlight=False)
             state.layers[name].visible = name in item.get('visible_layers', [])
-        state.layers['test_windows'] = neuroglancer.LocalAnnotationLayer(
-            dimensions=dimensions, annotation_color='#ffcb52',
-            annotations=[neuroglancer.AxisAlignedBoundingBoxAnnotation(
-                id=box['id'], description=box['name'], point_a=box['point_a'], point_b=box['point_b'])
-                for box in boxes])
+        state.layers['test_windows'] = annotations
         state.position = offset+size/2
         state.cross_section_scale = max(size*resolution)/(resolution[0]*600)
         state.projection_scale = 1.6*max(size*resolution)/resolution[0]
@@ -108,15 +119,17 @@ def build_overview(item, windows, raw_info, seg_info, raw_url, seg_url,
         for scope in (state.input_event_bindings.viewer, state.input_event_bindings.slice_view):
             scope['keyd'] = 'overview-previous-section'
             scope['keyf'] = 'overview-next-section'
+    contents = 'full raw and lc volume' if raw_url is not None else 'bundled lc labels and neuron meshes'
     set_status(viewer, 'overview',
-               f'{item["name"]}: full raw and lc volume. Local alignment: OFF. '
+               f'{item["name"]}: {contents}. Local alignment: OFF. '
                f'{len(boxes)} test-window boxes in dataset coordinates. Data cached as viewed.')
     set_status(viewer, 'overview-navigation',
                'D/F: previous/next slice. Select a test window for point prediction and SAM2 propagation.')
     report = {'kind': 'overview', 'alignment': {'enabled': False}, 'show_slices': False,
               'resolution_xyz_nm': resolution.tolist(), 'voxel_offset_xyz': offset.tolist(),
               'shape_xyz': size.astype(int).tolist(), 'boxes': boxes, 'segments': segments,
-              'raw_source': item['raw_path'], 'seg_source': item['seg_path'],
+              'raw_source': item.get('raw_path'), 'seg_source': item['seg_path'],
+              'test_windows_source': item.get('test_windows_path'),
               'image_layers': list(image_sources),
               'label_layers': list(label_sources),
               'meshes': 'Precomputed meshes supplied with the dataset'}

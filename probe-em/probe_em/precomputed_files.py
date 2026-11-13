@@ -5,7 +5,7 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import threading
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 import uuid
 
 
@@ -16,6 +16,7 @@ class PrecomputedFiles:
         self.cache = Path(cache_directory).resolve()
         self.cache.mkdir(parents=True, exist_ok=True)
         self.mounts = {}
+        self.percent_encoded_names = set()
         self.locks = [threading.Lock() for _ in range(64)]
         self.read_slots = threading.BoundedSemaphore(4)
 
@@ -27,6 +28,11 @@ class PrecomputedFiles:
         info = json.loads(metadata)
         if info.get('type') not in ('image', 'segmentation') or not info.get('scales'):
             raise ValueError('Expected a precomputed image or segmentation volume')
+        encoding = info.get('probe_em_filename_encoding')
+        if encoding not in (None, 'percent'):
+            raise ValueError('Unknown precomputed filename encoding')
+        if encoding == 'percent':
+            self.percent_encoded_names.add(name)
         identity = hashlib.sha256(str(source).encode()+b'\0'+metadata).hexdigest()
         destination = self.cache/identity
         destination.mkdir(exist_ok=True)
@@ -51,6 +57,10 @@ class PrecomputedFiles:
         if (not separator or name not in self.mounts or not parts or relative.startswith('/')
                 or '..' in parts or '\\' in relative or '\0' in relative):
             raise FileNotFoundError('Unknown volume file')
+        # Legacy mesh requests contain colons. Bundles use percent-encoded disk
+        # names so both source and cache remain valid on native Windows.
+        if name in self.percent_encoded_names:
+            relative = quote(relative, safe='/')
         source, destination = self.mounts[name]
         lock = self.locks[int(hashlib.sha256(request.encode()).hexdigest()[:8], 16) % len(self.locks)]
         with lock:

@@ -4,15 +4,16 @@ Probe-EM provides targeted neuron tracing and interactive review in Neuroglancer
 It supports point-guided image segmentation, SAM2 propagation across sections,
 and saved review masks.
 
-## LC-NE test demo
+## Fish-X LC-NE Test demo
 
 Install the dependencies in [INSTALL.md](INSTALL.md), then follow the
-[window browser guide](README_windows.md). The supplied
-[LC-NE test data on Hugging Face](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test)
-contains an overview and five process windows. Request access on the dataset page,
-then follow the [dataset guide](../docs/LC_NE_TEST.md) and
-[setup tutorial](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test/blob/main/TUTORIAL.md)
-for authentication, downloading, extraction, and controls.
+[window browser guide](README_windows.md). Choose `--dataset examples` for the
+lc labels/meshes, five window boxes, and five examples bundled in the repository,
+or `--dataset full --data-root PATH` to add full-volume raw and context images.
+Both start at the overview. The first option needs no dataset
+download. For the second, download and extract
+[Fish-X LC-NE Test from Hugging Face](https://huggingface.co/datasets/JackieZhai/Fish-X_LC-NE_Test)
+first; see the [dataset guide](../docs/LC_NE_TEST.md) for access and setup.
 
 | Guide | Contents |
 | --- | --- |

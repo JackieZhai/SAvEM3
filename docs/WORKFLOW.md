@@ -24,7 +24,7 @@ nearest-neighbor affinities as `1 - max(boundary[p], boundary[p - e])`.
 Follow the [SAEM² guide](../saem2/README.md) to prepare membrane targets and
 train the decoder. The [data engine](../repro/data_engine/README.md) supplies
 sampling and prompt-feature tools. Keep training and test specimens separate;
-[LC-NE test](LC_NE_TEST.md) is the supplied test data.
+[Fish-X LC-NE Test](LC_NE_TEST.md) is the supplied test data.
 
 ## Export teacher targets and train SAvEM³
 

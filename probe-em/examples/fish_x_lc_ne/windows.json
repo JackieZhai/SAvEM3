@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "source_plan_sha256": "19f795303c4791a34e14213251c6ec31a698b977ad704c1bf3333b419b6cd64a",
+  "local_alignment_algorithm": "wide-context-ecc-preserve-global-trend-v1",
+  "local_alignment_recipe": {
+    "estimation_shape_xyz": [
+      512,
+      512,
+      63
+    ],
+    "estimation_resolution_xyz_nm": [
+      32,
+      32,
+      30
+    ],
+    "parameters": {
+      "max_shift_nm": 800.0,
+      "coarse_resolution_nm": 128.0,
+      "min_ncc": 0.25,
+      "min_overlap": 0.7,
+      "neighbor_gaps": [
+        1,
+        2
+      ]
+    },
+    "preserve_global_trend": true,
+    "middle_section_fixed": true
+  },
+  "initial_index": 0,
+  "windows": [
+    {
+      "kind": "roi",
+      "name": "Neuron 30001 process (11.0 um from soma)",
+      "seed": 30001,
+      "position_xyz": [
+        6997.4638671875,
+        3938.530517578125,
+        1148.5
+      ],
+      "visible_layers": [
+        "ground_truth"
+      ],
+      "colors": {
+        "ground_truth": "#b0b0b0"
+      },
+      "bounds_nm": [
+        [
+          53848,
+          29568,
+          33510
+        ],
+        [
+          57944,
+          33664,
+          35400
+        ]
+      ],
+      "local_dir": "process_windows/neuron_30001/cache",
+      "align_field": "process_windows/neuron_30001/alignment/field.npz",
+      "label_layers": {
+        "ground_truth": "process_windows/neuron_30001/cache/target"
+      },
+      "image_layers": {},
+      "starter_session": "starter_session/neuron_30001"
+    },
+    {
+      "kind": "roi",
+      "name": "Neuron 30002 process (15.6 um from soma)",
+      "seed": 30002,
+      "position_xyz": [
+        6108.6630859375,
+        4716.44189453125,
+        684.5
+      ],
+      "visible_layers": [
+        "ground_truth"
+      ],
+      "colors": {
+        "ground_truth": "#b0b0b0"
+      },
+      "bounds_nm": [
+        [
+          46616,
+          35944,
+          19590
+        ],
+        [
+          50712,
+          40040,
+          21480
+        ]
+      ],
+      "local_dir": "process_windows/neuron_30002/cache",
+      "align_field": "process_windows/neuron_30002/alignment/field.npz",
+      "label_layers": {
+        "ground_truth": "process_windows/neuron_30002/cache/target"
+      },
+      "image_layers": {},
+      "starter_session": "starter_session/neuron_30002"
+    },
+    {
+      "kind": "roi",
+      "name": "Neuron 30003 process (23.2 um from soma)",
+      "seed": 30003,
+      "position_xyz": [
+        7787.169921875,
+        4320.14892578125,
+        516.5
+      ],
+      "visible_layers": [
+        "ground_truth"
+      ],
+      "colors": {
+        "ground_truth": "#b0b0b0"
+      },
+      "bounds_nm": [
+        [
+          60256,
+          32536,
+          14550
+        ],
+        [
+          64352,
+          36632,
+          16440
+        ]
+      ],
+      "local_dir": "process_windows/neuron_30003/cache",
+      "align_field": "process_windows/neuron_30003/alignment/field.npz",
+      "label_layers": {
+        "ground_truth": "process_windows/neuron_30003/cache/target"
+      },
+      "image_layers": {},
+      "starter_session": "starter_session/neuron_30003"
+    },
+    {
+      "kind": "roi",
+      "name": "Neuron 30004 process (29.9 um from soma)",
+      "seed": 30004,
+      "position_xyz": [
+        8478.0693359375,
+        5120.837890625,
+        180.5
+      ],
+      "visible_layers": [
+        "ground_truth"
+      ],
+      "colors": {
+        "ground_truth": "#b0b0b0"
+      },
+      "bounds_nm": [
+        [
+          65824,
+          38984,
+          4470
+        ],
+        [
+          69920,
+          43080,
+          6360
+        ]
+      ],
+      "local_dir": "process_windows/neuron_30004/cache",
+      "align_field": "process_windows/neuron_30004/alignment/field.npz",
+      "label_layers": {
+        "ground_truth": "process_windows/neuron_30004/cache/target"
+      },
+      "image_layers": {},
+      "starter_session": "starter_session/neuron_30004"
+    },
+    {
+      "kind": "roi",
+      "name": "Neuron 30005 process (38.0 um from soma)",
+      "seed": 30005,
+      "position_xyz": [
+        4475.158203125,
+        2153.130859375,
+        1076.5
+      ],
+      "visible_layers": [
+        "ground_truth"
+      ],
+      "colors": {
+        "ground_truth": "#b0b0b0"
+      },
+      "bounds_nm": [
+        [
+          33936,
+          15352,
+          31350
+        ],
+        [
+          38032,
+          19448,
+          33240
+        ]
+      ],
+      "local_dir": "process_windows/neuron_30005/cache",
+      "align_field": "process_windows/neuron_30005/alignment/field.npz",
+      "label_layers": {
+        "ground_truth": "process_windows/neuron_30005/cache/target"
+      },
+      "image_layers": {},
+      "starter_session": "starter_session/neuron_30005"
+    }
+  ],
+  "dataset": "Fish-X LC-NE Test"
+}
